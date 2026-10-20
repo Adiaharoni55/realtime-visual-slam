@@ -13,6 +13,13 @@ struct VoParams {
     int min_inliers = 100;           // fewer PnP inliers than this -> new keyframe
 };
 
+struct TrackStats {
+    int matches = 0;
+    int inliers = 0;
+    bool success = false;
+    bool new_keyframe = false;
+};
+
 // Frame-to-frame visual odometry: estimates the camera pose of each new frame
 // by matching it against the last keyframe. 
 // New keyframe is chosen when the camera moved or rotated enough, or when there are too few inliers.
@@ -24,10 +31,10 @@ public:
     // Returns the camera pose of this frame, relative to the first frame.
     Pose track(const cv::Mat& gray, const cv::Mat& depth);
 
-    // How many frames so far had a failed motion estimate (pose was kept unchanged).
+    // Gets 
     int failures() const { return failures_; }
-
     int keyframes() const { return num_keyframes_; }
+    const TrackStats& lastStats() const { return last_stats_; }
 
 private:
     // parameters
@@ -45,6 +52,10 @@ private:
     cv::Mat keyframe_depth_;
     int num_keyframes_ = 0;
 
+    // Tracking the status
+    TrackStats last_stats_;
+
+    // Function to set the keyframe when needed
     void setKeyframe(FrameFeatures&& features, const cv::Mat& depth);
 };
 

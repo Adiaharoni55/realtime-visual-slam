@@ -1,5 +1,7 @@
 #include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -11,6 +13,7 @@
 #include "rtvm/visual_odometry.hpp"
 
 int main(int argc, char** argv) {
+
     // 2 required arguments + up to 3 optional ones.
     if (argc < 3 || argc > 6) {
         std::cerr << "Usage: " << argv[0]
@@ -18,12 +21,14 @@ int main(int argc, char** argv) {
                   << " [max_translation_m] [max_rotation_deg] [min_inliers]\n";
         return 1;
     }
+    const std::filesystem::path output_dir = "output";
+    std::filesystem::create_directories(output_dir);
 
     std::string dir = argv[1];
     rtvm::PinholeCamera camera = rtvm::loadCameraFromYaml(argv[2]);
 
     // Optional thresholds: use the given value if it's there, otherwise the default.
-        rtvm::VoParams params;   // starts with the defaults from the struct
+    rtvm::VoParams params;   // starts with the defaults from the struct
     if (argc > 3) params.max_translation  = std::stod(argv[3]);
     if (argc > 4) params.max_rotation_deg = std::stod(argv[4]);
     if (argc > 5) params.min_inliers      = std::stoi(argv[5]);
@@ -39,6 +44,13 @@ int main(int argc, char** argv) {
 
     rtvm::VisualOdometry vo(camera, params);
     std::vector<rtvm::TimedPose> trajectory;
+    std::ofstream csv(output_dir / "stats.csv");
+    if (!csv) {
+        std::cerr << "Could not open " << (output_dir / "stats.csv") << '\n';
+        return 1;
+    }
+    csv << std::fixed << std::setprecision(6);
+    csv << "timestamp,matches,inliers,success,new_keyframe\n";
 
     auto start = std::chrono::steady_clock::now();
     for (std::size_t i = 0; i < frames.size(); ++i) {
@@ -46,7 +58,10 @@ int main(int argc, char** argv) {
         cv::Mat depth = cv::imread(dir + "/" + frames[i].depth_path, cv::IMREAD_UNCHANGED);
 
         rtvm::Pose pose = vo.track(gray, depth);
-        trajectory.push_back({frames[i].timestamp, pose});
+        const auto& s = vo.lastStats();
+        double timestamp = frames[i].timestamp;
+        csv << timestamp << ',' << s.matches << ',' << s.inliers << ',' << s.success << ',' << s.new_keyframe << '\n';
+        trajectory.push_back({timestamp, pose});
 
         if (i % 100 == 0) {
             std::cout << "Frame " << i << " / " << frames.size() << '\n';
@@ -55,13 +70,13 @@ int main(int argc, char** argv) {
     auto end = std::chrono::steady_clock::now();
     double ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-    std::filesystem::create_directories("output");
-    rtvm::writeTumTrajectory("output/trajectory.txt", trajectory);
+    rtvm::writeTumTrajectory((output_dir / "trajectory.txt").string(), trajectory);
 
     std::cout << "Failed frames: " << vo.failures() << '\n'
               << "Keyframes: " << vo.keyframes() << "\n"
               << "Average time per frame: " << ms / frames.size() << " ms\n"
-              << "Saved output/trajectory.txt\n";
+              << "Saved " << (output_dir / "trajectory.txt").string() << " and "
+              << (output_dir / "stats.csv").string() << '\n';
     
     return 0;
 }
