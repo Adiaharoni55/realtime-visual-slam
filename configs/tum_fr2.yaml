@@ -1,0 +1,8 @@
+# TUM RGB-D, Freiburg 1 camera (RGB)
+fx: 520.9
+fy: 521.0
+cx: 325.1
+cy: 249.7
+
+# Distortion, OpenCV order: k1, k2, p1, p2, k3
+distortion: [0.2312, -0.7849, -0.0033, -0.0001, 0.9172]

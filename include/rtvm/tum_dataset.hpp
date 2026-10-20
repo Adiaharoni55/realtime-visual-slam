@@ -3,6 +3,7 @@
 #include "rtvm/pose.hpp"
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace rtvm {
 
@@ -34,7 +35,7 @@ struct Frame {
     double timestamp;         // RGB image time (seconds)
     std::string rgb_path;
     std::string depth_path;
-    Pose ground_truth;
+    std::optional<Pose> ground_truth;
 };
 
 // Match each RGB image with the closest depth image and ground-truth pose.

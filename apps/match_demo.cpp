@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
     const auto& frame2 = frames[10];
 
     // How far did the camera truly move between the two frames? (from ground truth)
-    rtvm::Pose motion = rtvm::relativePose(frame1.ground_truth, frame2.ground_truth);
+    rtvm::Pose motion = rtvm::relativePose(frame1.ground_truth.value(), frame2.ground_truth.value());
     std::cout << "True camera movement: " << motion.translation().norm() * 100 << " cm\n";
     std::cout << "True camera rotation: "
             << Eigen::AngleAxisd(motion.linear()).angle() * 180.0 / EIGEN_PI << " degrees\n";

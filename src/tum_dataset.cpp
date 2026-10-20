@@ -104,7 +104,8 @@ void writeTumTrajectory(const std::string& path, const std::vector<TimedPose>& p
 }
 
 
-// Frames with no match within max_diff seconds are skipped.
+// A frame is kept when a depth image lies within max_diff seconds of its RGB image.
+// Ground truth is attached only when a pose lies within max_diff; otherwise it stays empty.
 std::vector<Frame> associateTum(const std::vector<TimedFile>& rgb,
                                 const std::vector<TimedFile>& depth,
                                 const std::vector<TimedPose>& ground_truth,
@@ -112,7 +113,7 @@ std::vector<Frame> associateTum(const std::vector<TimedFile>& rgb,
     std::vector<Frame> frames;
 
     // Nothing to match against: return no frames.
-    if (depth.empty() || ground_truth.empty()) {
+    if (depth.empty()) {
         return frames;
     }
 
@@ -126,18 +127,24 @@ std::vector<Frame> associateTum(const std::vector<TimedFile>& rgb,
 
 
     for (const TimedFile& image : rgb) {
-
-        // Closest depth image and ground-truth pose to this RGB image.
+        // Depth is required: skip this image if the closest depth is too far away in time.
         const TimedFile& d = depth[closestIndex(depth, image.timestamp)];
-        const TimedPose& g = ground_truth[closestIndex(ground_truth, image.timestamp)];
-
-        // Skip this image if either match is too far away in time.
-        if (std::abs(d.timestamp - image.timestamp) > max_diff ||
-            std::abs(g.timestamp - image.timestamp) > max_diff) {
+        if (std::abs(d.timestamp - image.timestamp) > max_diff) {
             continue;
         }
 
-        frames.push_back({image.timestamp, image.path, d.path, g.pose});
+        // Start without ground truth.
+        Frame frame{image.timestamp, image.path, d.path, std::nullopt};
+
+        // Ground truth is optional: attach it only if a close pose exists.
+        if (!ground_truth.empty()) {
+            const TimedPose& g = ground_truth[closestIndex(ground_truth, image.timestamp)];
+            if (std::abs(g.timestamp - image.timestamp) <= max_diff) {
+                frame.ground_truth = g.pose;
+            }
+        }
+
+        frames.push_back(frame);
     }
     return frames;
 }

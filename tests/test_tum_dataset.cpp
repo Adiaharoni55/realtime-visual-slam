@@ -60,7 +60,8 @@ TEST(TumDatasetTest, AssociatesClosestDepthAndPose) {
     ASSERT_EQ(frames.size(), 1u);
     EXPECT_EQ(frames[0].rgb_path, "rgb/a.png");
     EXPECT_EQ(frames[0].depth_path, "depth/y.png");
-    EXPECT_NEAR(frames[0].ground_truth.translation().x(), 1.0, 1e-9);
+    ASSERT_TRUE(frames[0].ground_truth.has_value());
+    EXPECT_NEAR(frames[0].ground_truth->translation().x(), 1.0, 1e-9);
 }
 
 // An RGB image with no depth image within max_diff is skipped.
@@ -76,7 +77,8 @@ TEST(TumDatasetTest, SkipsFrameWithoutCloseDepth){
 
     ASSERT_EQ(frames.size(), 1u);
     EXPECT_EQ(frames[0].rgb_path, "rgb/a.png");
-    EXPECT_NEAR(frames[0].ground_truth.translation().x(), 1.0, 1e-9);
+    ASSERT_TRUE(frames[0].ground_truth.has_value());
+    EXPECT_NEAR(frames[0].ground_truth->translation().x(), 1.0, 1e-9);
 }
 
 // Unsorted input is rejected, because binary search would give wrong matches.
@@ -103,4 +105,35 @@ TEST(TumDatasetTest, WriteThenReadGivesSamePoses) {
     ASSERT_EQ(read.size(), 2u);
     EXPECT_NEAR(read[1].timestamp, 2.5, 1e-6);
     EXPECT_NEAR(read[1].pose.translation().z(), 6.0, 1e-6);
+}
+
+// Ground truth only scores the result; it must never decide which frames are tracked.
+// (On fr2/desk, motion-capture gaps were silently dropping ~700 frames.)
+TEST(TumDatasetTest, KeepsFrameWithoutCloseGroundTruth) {
+    std::vector<rtvm::TimedFile> rgb = {{1.000, "rgb/a.png"}};
+    std::vector<rtvm::TimedFile> depth = {{1.002, "depth/x.png"}};
+        std::vector<rtvm::TimedPose> gt = {
+        {2.000, rtvm::poseFromTum(1, 0, 0, 0, 0, 0, 1)}
+    };
+
+    std::vector<rtvm::Frame> frames = rtvm::associateTum(rgb, depth, gt);
+
+    ASSERT_EQ(frames.size(), 1u);
+    EXPECT_EQ(frames[0].rgb_path, "rgb/a.png");
+    EXPECT_FALSE(frames[0].ground_truth.has_value());
+}
+
+// Sequences without ground truth (e.g. your own camera) must still produce frames.
+TEST(TumDatasetTest, WorksWithEmptyGroundTruth) {
+    std::vector<rtvm::TimedFile> rgb = {{1.000, "rgb/a.png"}, {2.000, "rgb/b.png"}};
+    std::vector<rtvm::TimedFile> depth = {{1.01, "depth/x.png"}, {2.01, "depth/y.png"}};
+    std::vector<rtvm::TimedPose> gt = {};
+
+    std::vector<rtvm::Frame> frames = rtvm::associateTum(rgb, depth, gt);
+
+    ASSERT_EQ(frames.size(), 2u);
+    EXPECT_EQ(frames[0].rgb_path, "rgb/a.png");
+    EXPECT_FALSE(frames[0].ground_truth.has_value());
+    EXPECT_EQ(frames[1].rgb_path, "rgb/b.png");
+    EXPECT_FALSE(frames[1].ground_truth.has_value());
 }
