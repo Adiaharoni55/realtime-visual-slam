@@ -4,7 +4,7 @@
 
 A real-time C++17 SLAM system that estimates motion and builds a 3D map from a camera and a LiDAR. A deep-learning segmentation model (ONNX Runtime) masks moving objects such as people and cars, so they don't corrupt tracking.
 
-> **Status: work in progress.** Visual odometry runs end to end on TUM RGB-D: 3.90 cm ATE at ~64 FPS on `fr1/xyz`. Keyframes and a backend are next.
+> **Status: v0.1, visual odometry.** RGB-D visual odometry runs faster than real time (~15 ms/frame) and is evaluated on three TUM sequences. Next: bundle adjustment and loop closure.
 
 ## Progress
 
@@ -12,7 +12,7 @@ A real-time C++17 SLAM system that estimates motion and builds a 3D map from a c
 | --- | --- |
 | 1. Project setup: CMake, sanitizers, unit tests, CI on Linux / macOS / Windows | ✅ Done |
 | 2. Camera geometry: pinhole model, poses and quaternions, YAML camera config | ✅ Done |
-| 3. Visual odometry on TUM RGB-D | 🚧 In progress (frame-to-frame VO working; keyframes next) |
+| 3. Visual odometry on TUM RGB-D | ✅ Done (v0.1) |
 | 4. Backend: bundle adjustment, pose graph, loop closure | Planned |
 | 5. Masking moving objects with a deep-learning model (ONNX Runtime) | Planned |
 | 6. LiDAR + camera fusion on KITTI | Planned |
@@ -25,29 +25,37 @@ A real-time C++17 SLAM system that estimates motion and builds a 3D map from a c
 - **Pinhole camera model:** project 3D points to pixels and back-project pixels with depth to 3D, with input validation.
 - **Pose utilities:** TUM-format poses (translation + quaternion) to 4×4 rigid transforms, and relative motion between poses.
 - **Camera config:** intrinsics loaded from YAML files in `configs/`.
-- **TUM RGB-D loader:** reads image lists and ground truth, and associates RGB, depth and ground-truth poses by timestamp (binary search, validated input).
-- **Unit tests** for all of the above (GoogleTest), run in CI on every push.
+- **TUM RGB-D loader:** reads image lists and ground truth, and associates RGB and depth by timestamp (binary search, validated input). Ground truth is optional, so it never decides which frames get tracked.
 - **ORB features:** detection and matching with Lowe's ratio test.
 - **Motion estimation:** PnP + RANSAC on depth-backprojected points, with keypoint undistortion.
-- **Visual odometry:** frame-to-frame tracking over a whole sequence, writing a TUM-format trajectory.
+- **Visual odometry:** frame-to-keyframe tracking (new keyframe after 5 cm, 5° or too few inliers), writing a TUM-format trajectory and per-frame statistics.
+- **Evaluation:** ATE/RPE with evo on three sequences, a threshold sweep, and a [failure analysis](docs/failure-analysis.md).
+- **Unit tests** for all of the above (GoogleTest, including synthetic scenes with known motion), run in CI on every push.
 
 ## Results
 
-Frame-to-frame visual odometry on TUM `fr1/xyz` (796 frames, Release build, Apple Silicon). No backend optimization yet.
+RGB-D visual odometry, no backend optimization yet. Release build, Apple Silicon. Evaluated with [evo](https://github.com/MichaelGrupp/evo) (`--align`; RPE over 1-second windows).
 
-| Metric | Value |
-| --- | --- |
-| ATE (RMSE) | 3.90 cm |
-| RPE (RMSE, 1 s windows) | 3.85 cm/s |
-| Speed | 15.6 ms/frame (~64 FPS, including image loading) |
-| Tracking failures | 0 / 796 |
+| TUM sequence | Path | Frames | ATE | RPE | Speed | Failures |
+| --- | --- | --- | --- | --- | --- | --- |
+| fr1/xyz | short, back and forth | 796 | 5.00 cm | 2.34 cm/s | 15.1 ms/frame | 0 |
+| fr2/desk | 18.9 m loop around a desk | 2,965 | 13.3 cm | 1.62 cm/s | 14.8 ms/frame | 0 |
+| fr1/desk | fast handheld | 596 | 6.49 cm | 3.97 cm/s | 15.1 ms/frame | 0 |
 
-Evaluated with [evo](https://github.com/MichaelGrupp/evo):
+Keyframes vs. frame-to-frame tracking on fr2/desk: **ATE 45.8 → 13.3 cm**, RPE 4.33 → 1.62 cm/s.
+
+![Estimated trajectory vs. ground truth on fr2/desk (top view, colored by error)](docs/images/fr2_desk_map.png)
+
+The remaining error is mostly slow drift: the loop doesn't fully close. That's what the backend (Step 4) addresses. Where and why tracking struggles is described in the [failure analysis](docs/failure-analysis.md).
+
+### Reproduce
 
 ```bash
-./build/release/rtvm_run_vo data/rgbd_dataset_freiburg1_xyz configs/tum_fr1.yaml
-evo_ape tum data/rgbd_dataset_freiburg1_xyz/groundtruth.txt output/trajectory.txt --align
-evo_rpe tum data/rgbd_dataset_freiburg1_xyz/groundtruth.txt output/trajectory.txt --align --delta 30 --delta_unit f --all_pairs
+cmake --preset release && cmake --build --preset release
+./build/release/rtvm_run_vo data/rgbd_dataset_freiburg2_desk configs/tum_fr2.yaml   # optional: [max_m] [max_deg] [min_inliers]
+evo_ape tum data/rgbd_dataset_freiburg2_desk/groundtruth.txt output/trajectory.txt --align
+evo_rpe tum data/rgbd_dataset_freiburg2_desk/groundtruth.txt output/trajectory.txt --align --delta 30 --delta_unit f --all_pairs
+python scripts/plot_stats.py   # inliers and keyframes over time
 ```
 
 ## Planned pipeline
@@ -61,7 +69,7 @@ evo_rpe tum data/rgbd_dataset_freiburg1_xyz/groundtruth.txt output/trajectory.tx
 
 ## Tech stack
 
-C++17 · CMake + presets · vcpkg · Eigen · OpenCV · yaml-cpp · GoogleTest · GitHub Actions · ASan / UBSan
+C++17 · CMake + presets · vcpkg · Eigen · OpenCV · yaml-cpp · GoogleTest · GitHub Actions · ASan / UBSan · evo (Python)  
 *Planned:* Ceres, ONNX Runtime, Open3D, Rerun, Docker, ROS 2
 
 ## Build
@@ -89,6 +97,8 @@ mkdir -p data && cd data
 tar -xzf rgbd_dataset_freiburg1_xyz.tgz
 ```
 
+The results above also use `freiburg2_desk` and `freiburg1_desk`, from the same page and unpacked the same way. Use `configs/tum_fr1.yaml` for fr1 sequences and `configs/tum_fr2.yaml` for fr2 sequences.
+
 The `data/` folder is not tracked by Git.
 
 ## Project structure
@@ -97,10 +107,11 @@ The `data/` folder is not tracked by Git.
 realtime-visual-slam/
 ├── include/rtvm/   # Public headers
 ├── src/            # Library implementation
-├── apps/           # Programs: rtvm, rtvm_match_demo, rtvm_run_vo├── tests/          # Unit tests and small test fixtures
+├── apps/           # Programs: rtvm, rtvm_match_demo, rtvm_run_vo
+├── tests/          # Unit tests and small test fixtures
 ├── configs/        # Camera parameters (YAML)
-├── scripts/        # Python helpers (evaluation, model export)
-├── docs/           # Design notes
+├── scripts/        # Python helpers (plotting, evaluation)
+├── docs/           # Failure analysis and images
 ├── CMakeLists.txt
 ├── CMakePresets.json
 └── vcpkg.json      # Dependencies
