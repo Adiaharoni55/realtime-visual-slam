@@ -1,7 +1,7 @@
 #include "rtvm/version.hpp"
 
 namespace rtvm{
-    std::string version(){
-        return "0.0.1";
-    }
+std::string version() {
+    return RTVM_VERSION;
+}
 } // namespace rtvm

@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 # Project name, version, and language (CXX = C++)
-project(rtvm VERSION 0.0.1 LANGUAGES CXX)
+project(rtvm VERSION 0.1.0 LANGUAGES CXX)
 
 # ---- Dependencies (installed by vcpkg from vcpkg.json) ----
 find_package(Eigen3 CONFIG REQUIRED)
@@ -28,6 +28,9 @@ add_library(rtvm_core
     src/motion.cpp
     src/visual_odometry.cpp
 )
+
+# find the version
+target_compile_definitions(rtvm_core PRIVATE RTVM_VERSION="${PROJECT_VERSION}")
 
 # Anyone using rtvm_core can #include "rtvm/..." from the include/ folder
 target_include_directories(rtvm_core PUBLIC
