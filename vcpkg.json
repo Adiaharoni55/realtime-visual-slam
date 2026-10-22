@@ -4,6 +4,7 @@
     "dependencies": [
     "eigen3",
     "yaml-cpp",
+    "ceres",
     {
       "name": "opencv4",
       "default-features": false,

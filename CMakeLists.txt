@@ -8,6 +8,7 @@ project(rtvm VERSION 0.1.0 LANGUAGES CXX)
 find_package(Eigen3 CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
+find_package(Ceres CONFIG REQUIRED)
 
 # Use C++17 for the whole project, and fail if the compiler can't do it
 set(CMAKE_CXX_STANDARD 17)
@@ -41,7 +42,7 @@ target_include_directories(rtvm_core PUBLIC
 # PUBLIC: our headers use these types, so users of rtvm_core need them too.
 # PRIVATE: used only inside our .cpp files.
 target_link_libraries(rtvm_core
-    PUBLIC  Eigen3::Eigen ${OpenCV_LIBS}
+    PUBLIC  Eigen3::Eigen ${OpenCV_LIBS} Ceres::ceres
     PRIVATE yaml-cpp::yaml-cpp
 )
 

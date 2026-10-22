@@ -7,6 +7,7 @@ add_executable(rtvm_tests
     test_depth_source.cpp
     test_features.cpp
     test_motion.cpp
+    test_ceres.cpp
 )
 
 # Tests use our library + GoogleTest (gtest_main provides main())
