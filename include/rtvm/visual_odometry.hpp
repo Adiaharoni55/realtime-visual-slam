@@ -1,8 +1,11 @@
 #pragma once
 
+#include <vector>
+
 #include "rtvm/camera.hpp"
 #include "rtvm/features.hpp"
 #include "rtvm/pose.hpp"
+#include "rtvm/pose_graph.hpp"
 
 namespace rtvm {
 
@@ -13,6 +16,7 @@ struct VoParams {
     int min_inliers = 100;           // fewer PnP inliers than this -> new keyframe
 };
 
+// What happened inside track() for the last frame.
 struct TrackStats {
     int matches = 0;
     int inliers = 0;
@@ -20,9 +24,10 @@ struct TrackStats {
     bool new_keyframe = false;
 };
 
-// Frame-to-frame visual odometry: estimates the camera pose of each new frame
-// by matching it against the last keyframe. 
-// New keyframe is chosen when the camera moved or rotated enough, or when there are too few inliers.
+// Frame-to-keyframe visual odometry: estimates the camera pose of each new frame
+// by matching it against the current keyframe. A new keyframe is chosen when the
+// camera moved or rotated enough, or when there are too few inliers.
+// Every keyframe is also stored in a pose graph for later optimization.
 class VisualOdometry {
 public:
     explicit VisualOdometry(PinholeCamera camera, VoParams params = {});
@@ -31,31 +36,44 @@ public:
     // Returns the camera pose of this frame, relative to the first frame.
     Pose track(const cv::Mat& gray, const cv::Mat& depth);
 
-    // Gets 
+   // One pose per tracked frame, rebuilt from the keyframe poses in the graph.
+    // Equal to the poses track() returned until the graph is optimized.
+    std::vector<Pose> trajectory() const;
+
+    // Getters
     int failures() const { return failures_; }
-    int keyframes() const { return num_keyframes_; }
+    int keyframes() const { return graph_.numNodes(); }
     const TrackStats& lastStats() const { return last_stats_; }
+    const PoseGraph& graph() const { return graph_; }
 
 private:
-    // parameters
+    // Where a frame was tracked from: its keyframe, and its pose relative to that keyframe.
+    struct FrameAnchor {
+        int keyframe_id = 0;
+        Pose relative = Pose::Identity();
+    };
+
+    // Configuration
     PinholeCamera camera_;
     VoParams params_;
 
-    // Current State
+    // Current state
     Pose pose_ = Pose::Identity();          // current camera pose (first frame = origin)
     int failures_ = 0;
 
-    // Keyframe
+    // Keyframes
+    PoseGraph graph_;                       // all keyframes (nodes) and the motions between them (edges)
     Pose keyframe_pose_ = Pose::Identity(); // world pose of the current keyframe
     bool has_keyframe_ = false;             // false until the first frame has been seen
     FrameFeatures keyframe_features_;
     cv::Mat keyframe_depth_;
-    int num_keyframes_ = 0;
+    int keyframe_id_ = 0;                   // the graph id of the current keyframe
 
-    // Tracking the status
+    // Per-frame records
     TrackStats last_stats_;
+    std::vector<FrameAnchor> anchors_;
 
-    // Function to set the keyframe when needed
+    // Makes the given frame the new keyframe and adds it to the graph.
     void setKeyframe(FrameFeatures&& features, const cv::Mat& depth);
 };
 

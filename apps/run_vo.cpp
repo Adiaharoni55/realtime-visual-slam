@@ -1,4 +1,5 @@
 #include <chrono>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -72,11 +73,27 @@ int main(int argc, char** argv) {
 
     rtvm::writeTumTrajectory((output_dir / "trajectory.txt").string(), trajectory);
 
-    std::cout << "Failed frames: " << vo.failures() << '\n'
-              << "Keyframes: " << vo.keyframes() << "\n"
+    // Check: the poses rebuilt from the graph must match the ones track() returned
+    // (nothing was optimized yet, so any difference means the bookkeeping is wrong).
+    const std::vector<rtvm::Pose> from_graph = vo.trajectory();
+    if (from_graph.size() != trajectory.size()) {
+        std::cerr << "Graph trajectory has " << from_graph.size() << " poses, expected "
+                  << trajectory.size() << '\n';
+        return 1;
+    }
+    double max_diff = 0.0;
+    for (std::size_t i = 0; i < trajectory.size(); ++i) {
+        const double diff =
+            (from_graph[i].translation() - trajectory[i].pose.translation()).norm();
+        max_diff = std::max(max_diff, diff);
+    }
+
+    std::cout << "Graph: " << vo.graph().numNodes() << " nodes, " << vo.graph().numEdges() << " edges\n"
+              << "Max difference graph vs. tracked: " << max_diff << " m\n"
+              << "Failed frames: " << vo.failures() << '\n'
               << "Average time per frame: " << ms / frames.size() << " ms\n"
               << "Saved " << (output_dir / "trajectory.txt").string() << " and "
               << (output_dir / "stats.csv").string() << '\n';
-    
+
     return 0;
 }

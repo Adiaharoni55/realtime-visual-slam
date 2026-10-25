@@ -21,12 +21,13 @@ public:
     // Adjusts all poses to agree with all edges as well as possible; node 0 stays fixed.
     void optimize();
 
-    // Returns the current pose of a node (optimized, once optimize() has run). 
+    // Returns the current pose of a node (optimized, once optimize() has run).
     // Throws if the id doesn't exist.
     Pose pose(int id) const;
 
-    // Number of nodes in the graph.
+    // Number of nodes and edges in the graph.
     int numNodes() const { return static_cast<int>(nodes_.size()); }
+    int numEdges() const { return static_cast<int>(edges_.size()); }
 
 private:
     struct Node { Eigen::Vector3d p; Eigen::Quaterniond q; };
