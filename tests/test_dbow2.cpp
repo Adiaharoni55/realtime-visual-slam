@@ -1,14 +1,12 @@
 #include <vector>
 
 #include <DBoW2/BowVector.h>
-#include <DBoW2/FORB.h>
-#include <DBoW2/TemplatedVocabulary.h>
 #include <gtest/gtest.h>
 #include <opencv2/core.hpp>
 
-namespace {
+#include "rtvm/vocabulary.hpp"
 
-using OrbVocabulary = DBoW2::TemplatedVocabulary<DBoW2::FORB::TDescriptor, DBoW2::FORB>;
+namespace {
 
 // Random ORB-like descriptors for one "image": each is a 1x32 CV_8U row, as DBoW2 expects.
 std::vector<cv::Mat> randomDescriptors(cv::RNG& rng, int count) {
@@ -33,7 +31,7 @@ TEST(DBoW2Test, ImageMatchesItselfPerfectly) {
 
     // Plain TF weighting: with TF-IDF, a word seen in every training image gets idf = log(N/N) = 0
     // and is dropped, which on random data can empty the BoW vector depending on the platform's rand().
-    OrbVocabulary vocabulary(5, 2, DBoW2::TF, DBoW2::L1_NORM);   // branching 5, depth 2 -> up to 25 words
+    rtvm::OrbVocabulary vocabulary(5, 2, DBoW2::TF, DBoW2::L1_NORM);   // branching 5, depth 2 -> up to 25 words
     vocabulary.create(training);
     ASSERT_GT(vocabulary.size(), 0u);
 

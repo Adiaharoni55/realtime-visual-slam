@@ -20,4 +20,7 @@ FrameFeatures detectOrb(const cv::Mat& gray, int max_features = 1000);
 std::vector<cv::DMatch> matchFeatures(const FrameFeatures& a, const FrameFeatures& b,
                                       double ratio = 0.75);
 
+// Split an Nx32 descriptor matrix into N 1x32 rows (the format DBoW2 expects).
+std::vector<cv::Mat> descriptorRows(const cv::Mat& descriptors);
+
 }  // namespace rtvm

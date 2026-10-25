@@ -1,6 +1,7 @@
 # private/large files
 /data/
 models/*.onnx
+models/*.yml.gz
 .DS_Store
 notes/
 .vscode/

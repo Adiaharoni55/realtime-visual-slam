@@ -79,6 +79,10 @@ target_link_libraries(rtvm_match_demo PRIVATE rtvm_core rtvm_warnings rtvm_sanit
 add_executable(rtvm_run_vo apps/run_vo.cpp)
 target_link_libraries(rtvm_run_vo PRIVATE rtvm_core rtvm_warnings rtvm_sanitizers)
 
+# ---- Tool: train an ORB vocabulary from TUM sequences (writes e.g. models/orb_vocab.yml.gz) ----
+add_executable(rtvm_train_vocab apps/train_vocab.cpp)
+target_link_libraries(rtvm_train_vocab PRIVATE rtvm_core rtvm_warnings rtvm_sanitizers)
+
 # The app uses the library (and inherits its PUBLIC include folder)
 target_link_libraries(rtvm PRIVATE rtvm_core)
 
