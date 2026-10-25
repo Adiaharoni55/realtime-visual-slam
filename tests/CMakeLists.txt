@@ -9,6 +9,7 @@ add_executable(rtvm_tests
     test_motion.cpp
     test_ceres.cpp
     test_pose_graph.cpp
+    test_dbow2.cpp
 )
 
 # Tests use our library + GoogleTest (gtest_main provides main())

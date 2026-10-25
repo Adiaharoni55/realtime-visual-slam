@@ -5,6 +5,7 @@
     "eigen3",
     "yaml-cpp",
     "ceres",
+    "dbow2",
     {
       "name": "opencv4",
       "default-features": false,

@@ -9,6 +9,25 @@ find_package(Eigen3 CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
 find_package(Ceres CONFIG REQUIRED)
+# DBoW2's own CMake config is outdated (no target, release library only), so define
+# a proper imported target: headers + the release and debug builds of the library.
+set(RTVM_VCPKG_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+find_path(DBOW2_INCLUDE_DIR DBoW2/TemplatedVocabulary.h
+          PATHS "${RTVM_VCPKG_DIR}/include" NO_DEFAULT_PATH REQUIRED)
+find_library(DBOW2_LIBRARY_RELEASE DBoW2
+             PATHS "${RTVM_VCPKG_DIR}/lib" NO_DEFAULT_PATH REQUIRED)
+find_library(DBOW2_LIBRARY_DEBUG DBoW2
+             PATHS "${RTVM_VCPKG_DIR}/debug/lib" NO_DEFAULT_PATH)
+
+add_library(DBoW2::DBoW2 UNKNOWN IMPORTED)
+set_target_properties(DBoW2::DBoW2 PROPERTIES
+    IMPORTED_LOCATION "${DBOW2_LIBRARY_RELEASE}"
+    INTERFACE_INCLUDE_DIRECTORIES "${DBOW2_INCLUDE_DIR}"
+    INTERFACE_LINK_LIBRARIES "${OpenCV_LIBS}")
+if(DBOW2_LIBRARY_DEBUG)
+    set_target_properties(DBoW2::DBoW2 PROPERTIES
+        IMPORTED_LOCATION_DEBUG "${DBOW2_LIBRARY_DEBUG}")
+endif()
 
 # Use C++17 for the whole project, and fail if the compiler can't do it
 set(CMAKE_CXX_STANDARD 17)
@@ -43,7 +62,7 @@ target_include_directories(rtvm_core PUBLIC
 # PUBLIC: our headers use these types, so users of rtvm_core need them too.
 # PRIVATE: used only inside our .cpp files.
 target_link_libraries(rtvm_core
-    PUBLIC  Eigen3::Eigen ${OpenCV_LIBS} Ceres::ceres
+    PUBLIC  Eigen3::Eigen ${OpenCV_LIBS} Ceres::ceres DBoW2::DBoW2
     PRIVATE yaml-cpp::yaml-cpp
 )
 
