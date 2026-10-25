@@ -31,11 +31,14 @@ TEST(DBoW2Test, ImageMatchesItselfPerfectly) {
         training.push_back(randomDescriptors(rng, 100));
     }
 
-    OrbVocabulary vocabulary(5, 2);   // branching factor 5, depth 2 -> up to 25 words
+    // Plain TF weighting: with TF-IDF, a word seen in every training image gets idf = log(N/N) = 0
+    // and is dropped, which on random data can empty the BoW vector depending on the platform's rand().
+    OrbVocabulary vocabulary(5, 2, DBoW2::TF, DBoW2::L1_NORM);   // branching 5, depth 2 -> up to 25 words
     vocabulary.create(training);
     ASSERT_GT(vocabulary.size(), 0u);
 
     DBoW2::BowVector v;
     vocabulary.transform(training[0], v);
+    ASSERT_FALSE(v.empty());
     EXPECT_NEAR(vocabulary.score(v, v), 1.0, 1e-9);
 }
