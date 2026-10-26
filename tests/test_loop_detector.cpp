@@ -111,3 +111,14 @@ TEST_F(LoopDetectorTest, NoCandidateWhileTooFewKeyframes) {
 TEST_F(LoopDetectorTest, MissingVocabularyThrows) {
     EXPECT_THROW(rtvm::LoopDetector("does/not/exist.yml.gz"), std::runtime_error);
 }
+
+// Scores never exceed 1.0, so min_score above it rejects even a perfect self-match
+// (the same query finds keyframe 3 with score 1.0 in FindsSameImageAmongOldKeyframes).
+TEST_F(LoopDetectorTest, RejectsCandidatesBelowMinScore) {
+    rtvm::LoopParams params;
+    params.min_score = 1.01;
+    rtvm::LoopDetector detector(vocab_path_, params);
+    addImages(detector, 40);
+
+    EXPECT_FALSE(detector.query(images_[3]));
+}

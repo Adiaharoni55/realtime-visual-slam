@@ -15,9 +15,10 @@ struct LoopCandidate {
     double score;
 };
 
-// Ignore the min_gap most recent keyframes: they always look similar and aren't loops.
+// When a keyframe counts as a loop candidate.
 struct LoopParams {
-    int min_gap = 30;
+    int min_gap = 30;           // ignore the N most recent keyframes
+    double min_score = 0.07;    // drop candidates scoring below this (chosen from the fr2/desk analysis)
 };
 
 // Finds loop-closure candidates: the older keyframe that looks most like a new one (bag of words).
@@ -33,7 +34,7 @@ public:
     void add(const cv::Mat& descriptors);
 
     // The most similar keyframe at least min_gap older than the newest one,
-    // or empty if there are too few keyframes yet.
+    // or empty if there are too few keyframes yet or the best score is below min_score.
     std::optional<LoopCandidate> query(const cv::Mat& descriptors) const;
 
     // How many keyframes were added.

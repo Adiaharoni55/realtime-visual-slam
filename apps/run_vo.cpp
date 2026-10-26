@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     csv << std::fixed << std::setprecision(6);
-    csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score\n";
+    csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score,loop_inliers,loop_accepted\n";
 
     auto start = std::chrono::steady_clock::now();
     for (std::size_t i = 0; i < frames.size(); ++i) {
@@ -100,7 +100,9 @@ int main(int argc, char** argv) {
             << s.success        << ','
             << s.new_keyframe   << ','
             << s.loop_candidate << ','
-            << s.loop_score     << '\n';
+            << s.loop_score     << ','
+            << s.loop_inliers   << ','
+            << s.loop_accepted  << '\n';
         trajectory.push_back({timestamp, pose});
 
         if (i % 100 == 0) {
@@ -110,7 +112,7 @@ int main(int argc, char** argv) {
     auto end = std::chrono::steady_clock::now();
     double ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-    rtvm::writeTumTrajectory((output_dir / "trajectory.txt").string(), trajectory);
+    rtvm::writeTumTrajectory((output_dir / "trajectory_vo.txt").string(), trajectory);
 
     // Check: the poses rebuilt from the graph must match the ones track() returned
     // (nothing was optimized yet, so any difference means the bookkeeping is wrong).
@@ -127,11 +129,28 @@ int main(int argc, char** argv) {
         max_diff = std::max(max_diff, diff);
     }
 
-    std::cout << "Graph: " << vo.graph().numNodes() << " nodes, " << vo.graph().numEdges() << " edges\n"
+    // Optimize the pose graph: the loop edges pull the drifted poses back.
+    if (vo.loopEdges() > 0) {
+        std::cout << "Optimizing pose graph...\n";
+        vo.optimize();
+    }
+
+    // The corrected trajectory: poses from the (optimized) graph, with the original timestamps.
+    const std::vector<rtvm::Pose> optimized = vo.trajectory();
+    std::vector<rtvm::TimedPose> optimized_trajectory;
+    optimized_trajectory.reserve(trajectory.size());
+    for (std::size_t i = 0; i < trajectory.size(); ++i) {
+        optimized_trajectory.push_back({trajectory[i].timestamp, optimized[i]});
+    }
+    rtvm::writeTumTrajectory((output_dir / "trajectory.txt").string(), optimized_trajectory);
+
+    std::cout << "Graph: " << vo.graph().numNodes() << " nodes, " << vo.graph().numEdges() << " edges ("
+              << vo.loopEdges() << " loops)\n"
               << "Max difference graph vs. tracked: " << max_diff << " m\n"
               << "Failed frames: " << vo.failures() << '\n'
               << "Average time per frame: " << ms / frames.size() << " ms\n"
-              << "Saved " << (output_dir / "trajectory.txt").string() << " and "
+              << "Saved " << (output_dir / "trajectory_vo.txt").string() << ", "
+              << (output_dir / "trajectory.txt").string() << " and "
               << (output_dir / "stats.csv").string() << '\n';
 
     return 0;

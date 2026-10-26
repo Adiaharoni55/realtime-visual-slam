@@ -41,20 +41,37 @@ void VisualOdometry::setKeyframe(FrameFeatures&& features, const cv::Mat& depth)
     if (loop_detector_) {
         std::optional<LoopCandidate> candidate = loop_detector_->query(features.descriptors);
         if (candidate) {
-            last_stats_.loop_candidate = candidate->keyframe_id;
+            const int c = candidate->keyframe_id;
+            last_stats_.loop_candidate = c;
             last_stats_.loop_score     = candidate->score;
+            std::vector<cv::DMatch> matches = matchFeatures(keyframe_features_[c], features);
+            MotionEstimate est = estimateMotion(keyframe_features_[c], features, matches,
+                                                keyframe_depths_[c], camera_);
+            last_stats_.loop_inliers = static_cast<int>(est.inliers.size());
+            // Verify geometrically: PnP from the old keyframe to this one. Only then trust it as a loop edge.
+            if (est.success && last_stats_.loop_inliers >= params_.min_loop_inliers) {
+                graph_.addEdge(c, id, est.motion);
+                ++loop_edges_;
+                last_stats_.loop_accepted = true;
+            }
         }
         loop_detector_->add(features.descriptors);
-        if (loop_detector_->size() != graph_.numNodes()) {
-            throw std::logic_error("VisualOdometry: loop detector and graph ids out of sync");
-        }
     }
 
     keyframe_id_ = id;
-    keyframe_features_ = std::move(features);
-    keyframe_depth_ = depth.clone();
+    keyframe_features_.push_back(std::move(features));
+    keyframe_depths_.push_back(depth.clone());
     keyframe_pose_ = pose_;
     has_keyframe_ = true;
+
+    // Everything stored per keyframe must have one entry per graph node, or an id would
+    // point to the wrong keyframe's data.
+    const int n = graph_.numNodes();
+    if (static_cast<int>(keyframe_features_.size()) != n ||
+        static_cast<int>(keyframe_depths_.size()) != n ||
+        (loop_detector_ && loop_detector_->size() != n)) {
+        throw std::logic_error("VisualOdometry: keyframe data and graph ids out of sync");
+    }
 }
 
 Pose VisualOdometry::track(const cv::Mat& gray, const cv::Mat& depth) {
@@ -65,9 +82,14 @@ Pose VisualOdometry::track(const cv::Mat& gray, const cv::Mat& depth) {
         setKeyframe(std::move(current), depth);
         last_stats_.success = true;
     } else {
-        std::vector<cv::DMatch> matches = matchFeatures(keyframe_features_, current);
-        MotionEstimate est = estimateMotion(keyframe_features_, current, matches,
-                                            keyframe_depth_, camera_);
+        // References into keyframe_features_/keyframe_depths_: only valid until the next
+        // setKeyframe() (push_back may reallocate). Don't use them after it.
+        const FrameFeatures& kf_features = keyframe_features_[keyframe_id_];
+        const cv::Mat& kf_depth = keyframe_depths_[keyframe_id_];
+
+        std::vector<cv::DMatch> matches = matchFeatures(kf_features, current);
+        MotionEstimate est = estimateMotion(kf_features, current, matches,
+                                            kf_depth, camera_);
 
         last_stats_.inliers = static_cast<int>(est.inliers.size());
         last_stats_.matches = static_cast<int>(matches.size());

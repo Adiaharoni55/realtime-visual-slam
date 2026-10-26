@@ -17,6 +17,7 @@ struct VoParams {
     double max_translation = 0.05;                  // meters moved since the keyframe
     double max_rotation_deg = 5.0;                  // degrees rotated since the keyframe
     int min_inliers = 100;                          // fewer PnP inliers than this -> new keyframe
+    int min_loop_inliers = 50;                      // PnP inliers needed to accept a loop candidate
 };
 
 // What happened inside track() for the last frame.
@@ -29,6 +30,8 @@ struct TrackStats {
     // Only filled for frames that become keyframes
     int loop_candidate = -1;                        // id of the best older keyframe, -1 if none
     double loop_score = 0.0;                        // its BoW similarity score
+    int loop_inliers = 0;                           // PnP inliers when verifying the candidate
+    bool loop_accepted = false;                     // true if the loop edge was added
 };
 
 // Frame-to-keyframe visual odometry: estimates the camera pose of each new frame
@@ -51,8 +54,13 @@ public:
     // Equal to the poses track() returned until the graph is optimized.
     std::vector<Pose> trajectory() const;
 
+    // Optimizes the pose graph (uses the loop edges). Afterwards trajectory() returns the corrected poses.
+    // Call once, at the end. Tracking state isn't updated.
+    void optimize() { graph_.optimize(); }
+
     // Getters
     int failures() const { return failures_; }
+    int loopEdges() const { return loop_edges_; }
     int keyframes() const { return graph_.numNodes(); }
     const TrackStats& lastStats() const { return last_stats_; }
     const PoseGraph& graph() const { return graph_; }
@@ -77,9 +85,11 @@ private:
     std::unique_ptr<LoopDetector> loop_detector_;   // empty = loop detection off
     Pose keyframe_pose_ = Pose::Identity();         // world pose of the current keyframe
     bool has_keyframe_ = false;                     // false until the first frame has been seen
-    FrameFeatures keyframe_features_;
-    cv::Mat keyframe_depth_;
+    // every keyframe's features and depth, by graph id (for loop verification)
+    std::vector<FrameFeatures> keyframe_features_;
+    std::vector<cv::Mat> keyframe_depths_;
     int keyframe_id_ = 0;                           // the graph id of the current keyframe
+    int loop_edges_ = 0;
 
     // Per-frame records
     TrackStats last_stats_;

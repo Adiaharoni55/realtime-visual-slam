@@ -45,7 +45,7 @@ std::optional<LoopCandidate> LoopDetector::query(const cv::Mat& descriptors) con
     // + 1: DBoW2 keeps ids < max_id (its doc says <=, the code says <).
     DBoW2::QueryResults results;
     database_.query(descriptorRows(descriptors), results, 1, max_id + 1);
-    if (results.empty()) return std::nullopt;
+    if (results.empty() || results[0].Score < params_.min_score) return std::nullopt;
 
     return LoopCandidate{static_cast<int>(results[0].Id), results[0].Score};
 }
