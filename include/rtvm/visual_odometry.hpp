@@ -12,12 +12,14 @@
 
 namespace rtvm {
 
-// Thresholds that decide when the current frame becomes a new keyframe.
+// Tuning parameters for tracking, keyframe selection, loop verification and the sanity check.
 struct VoParams {
     double max_translation = 0.05;                  // meters moved since the keyframe
     double max_rotation_deg = 5.0;                  // degrees rotated since the keyframe
     int min_inliers = 100;                          // fewer PnP inliers than this -> new keyframe
     int min_loop_inliers = 50;                      // PnP inliers needed to accept a loop candidate
+    int min_track_inliers = 20;                     // fewer PnP inliers than this: don't trust the estimate
+    double max_frame_translation = 0.15;            // meters the camera may move between two frames
 };
 
 // What happened inside track() for the last frame.
@@ -25,6 +27,7 @@ struct TrackStats {
     int matches = 0;
     int inliers = 0;
     bool success = false;
+    bool rejected = false;                          // PnP succeeded, but the sanity check refused the estimate
     bool new_keyframe = false;
 
     // Only filled for frames that become keyframes

@@ -94,19 +94,34 @@ Pose VisualOdometry::track(const cv::Mat& gray, const cv::Mat& depth) {
         last_stats_.inliers = static_cast<int>(est.inliers.size());
         last_stats_.matches = static_cast<int>(matches.size());
 
+        // Sanity check: PnP can "succeed" with a few wrong matches that happen to agree.
+        // Accept only with enough inliers and a physically possible step since the last frame
+        // (pose_ still holds the previous frame's pose here).
+        bool accepted = false;
+        Pose candidate = pose_;
         if (est.success) {
-            pose_ = keyframe_pose_ * est.motion;
+            candidate = keyframe_pose_ * est.motion;
+            const double step = relativePose(pose_, candidate).translation().norm();
+            accepted = last_stats_.inliers >= params_.min_track_inliers &&
+                       step <= params_.max_frame_translation;
+            last_stats_.rejected = !accepted;
+        }
+
+        if (accepted) {
+            pose_ = candidate;
             last_stats_.success = true;
             // Decide whether this frame becomes the new keyframe
             const double movement = est.motion.translation().norm();
             const double rotation_deg =
-                (Eigen::AngleAxisd(est.motion.rotation()).angle() * 180.0)/EIGEN_PI;
+                (Eigen::AngleAxisd(est.motion.rotation()).angle() * 180.0) / EIGEN_PI;
             if (movement > params_.max_translation ||
                 rotation_deg > params_.max_rotation_deg ||
                 last_stats_.inliers < params_.min_inliers) {
                 setKeyframe(std::move(current), depth);
             }
         } else {
+            // PnP failed or the estimate is implausible: keep the last pose and restart
+            // from this frame as a new keyframe.
             ++failures_;
             setKeyframe(std::move(current), depth);
         }

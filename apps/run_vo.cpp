@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     csv << std::fixed << std::setprecision(6);
-    csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score,loop_inliers,loop_accepted\n";
+    csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score,loop_inliers,loop_accepted,rejected\n";
 
     auto start = std::chrono::steady_clock::now();
     for (std::size_t i = 0; i < frames.size(); ++i) {
@@ -102,7 +102,8 @@ int main(int argc, char** argv) {
             << s.loop_candidate << ','
             << s.loop_score     << ','
             << s.loop_inliers   << ','
-            << s.loop_accepted  << '\n';
+            << s.loop_accepted  << ','
+            << s.rejected       << '\n';
         trajectory.push_back({timestamp, pose});
 
         if (i % 100 == 0) {
