@@ -1,29 +1,13 @@
 #include "rtvm/loop_detector.hpp"
 
-#include <filesystem>
-#include <stdexcept>
 #include <string>
 
 #include "rtvm/features.hpp"
 #include "rtvm/vocabulary.hpp"
 
-namespace {
-
-// Load a vocabulary file. k, L, weighting and scoring all come from the file.
-rtvm::OrbVocabulary loadVocabulary(const std::string& path) {
-    // DBoW2's load() throws a plain std::string on failure, so check first for a clear error.
-    if (!std::filesystem::exists(path)) {
-        throw std::runtime_error("LoopDetector: vocabulary not found: " + path);
-    }
-    rtvm::OrbVocabulary vocabulary;
-    vocabulary.load(path);
-    return vocabulary;
-}
-
-}  // namespace
-
 namespace rtvm {
 
+// loadVocabulary() throws std::runtime_error if the file is missing (either format).
 // The database keeps its own copy of the vocabulary; the loaded one is a temporary, freed here.
 // No direct index (false, 0): we don't need it for feature matching.
 LoopDetector::LoopDetector(const std::string& vocabulary_path, LoopParams params)

@@ -2,6 +2,7 @@
 /data/
 models/*.onnx
 models/*.yml.gz
+models/*.bin
 .DS_Store
 notes/
 .vscode/

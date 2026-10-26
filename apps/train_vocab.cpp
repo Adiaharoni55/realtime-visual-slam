@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     std::cout << "Vocabulary: " << vocabulary.size() << " words, trained in "
               << seconds << " s\n";
 
-    vocabulary.save(output_path);
+    rtvm::saveVocabulary(vocabulary, output_path);   // ".bin" -> binary, otherwise YAML
     std::cout << "Saved " << output_path << '\n';
 
     return 0;

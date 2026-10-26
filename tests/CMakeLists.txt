@@ -11,6 +11,7 @@ add_executable(rtvm_tests
     test_pose_graph.cpp
     test_dbow2.cpp
     test_loop_detector.cpp
+    test_vocabulary.cpp
 )
 
 # Tests use our library + GoogleTest (gtest_main provides main())
