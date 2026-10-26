@@ -1,5 +1,5 @@
-#include <chrono>
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -13,30 +13,58 @@
 #include "rtvm/tum_dataset.hpp"
 #include "rtvm/visual_odometry.hpp"
 
+namespace {
+
+void printUsage(const char* program) {
+    std::cerr << "Usage: " << program
+              << " <TUM folder> <camera yaml>"
+              << " [max_translation_m] [max_rotation_deg] [min_inliers]"
+              << " [--vocab <file>]\n";
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
+    // Split the arguments: "--vocab <file>" is named (anywhere), all others are positional, in order.
+    std::vector<std::string> positional;
+    std::string vocab_path;   // empty = no loop detection
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--vocab") {
+            if (i + 1 >= argc) {   // no file after --vocab
+                printUsage(argv[0]);
+                return 1;
+            }
+            vocab_path = argv[++i];   // ++i: the path is consumed here, not as a positional
+        } else {
+            positional.push_back(arg);
+        }
+    }
 
     // 2 required arguments + up to 3 optional ones.
-    if (argc < 3 || argc > 6) {
-        std::cerr << "Usage: " << argv[0]
-                  << " <TUM folder> <camera yaml>"
-                  << " [max_translation_m] [max_rotation_deg] [min_inliers]\n";
+    if (positional.size() < 2 || positional.size() > 5) {
+        printUsage(argv[0]);
         return 1;
     }
+    if (!vocab_path.empty() && !std::filesystem::exists(vocab_path)) {
+        std::cerr << "Vocabulary not found: " << vocab_path << '\n';
+        return 1;
+    }
+
     const std::filesystem::path output_dir = "output";
     std::filesystem::create_directories(output_dir);
 
-    std::string dir = argv[1];
-    rtvm::PinholeCamera camera = rtvm::loadCameraFromYaml(argv[2]);
+    std::string dir = positional[0];
+    rtvm::PinholeCamera camera = rtvm::loadCameraFromYaml(positional[1]);
 
     // Optional thresholds: use the given value if it's there, otherwise the default.
     rtvm::VoParams params;   // starts with the defaults from the struct
-    if (argc > 3) params.max_translation  = std::stod(argv[3]);
-    if (argc > 4) params.max_rotation_deg = std::stod(argv[4]);
-    if (argc > 5) params.min_inliers      = std::stoi(argv[5]);
+    if (positional.size() > 2) params.max_translation  = std::stod(positional[2]);
+    if (positional.size() > 3) params.max_rotation_deg = std::stod(positional[3]);
+    if (positional.size() > 4) params.min_inliers      = std::stoi(positional[4]);
 
     std::cout << "Keyframe thresholds: " << params.max_translation << " m, "
               << params.max_rotation_deg << " deg, " << params.min_inliers << " inliers\n";
-
 
     auto frames = rtvm::associateTum(rtvm::readTumFileList(dir + "/rgb.txt"),
                                      rtvm::readTumFileList(dir + "/depth.txt"),
@@ -44,6 +72,11 @@ int main(int argc, char** argv) {
     std::cout << "Frames: " << frames.size() << '\n';
 
     rtvm::VisualOdometry vo(camera, params);
+    if (!vocab_path.empty()) {
+        std::cout << "Loading vocabulary " << vocab_path << "...\n";
+        vo.enableLoopDetection(vocab_path);
+    }
+
     std::vector<rtvm::TimedPose> trajectory;
     std::ofstream csv(output_dir / "stats.csv");
     if (!csv) {
@@ -51,7 +84,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     csv << std::fixed << std::setprecision(6);
-    csv << "timestamp,matches,inliers,success,new_keyframe\n";
+    csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score\n";
 
     auto start = std::chrono::steady_clock::now();
     for (std::size_t i = 0; i < frames.size(); ++i) {
@@ -61,7 +94,13 @@ int main(int argc, char** argv) {
         rtvm::Pose pose = vo.track(gray, depth);
         const auto& s = vo.lastStats();
         double timestamp = frames[i].timestamp;
-        csv << timestamp << ',' << s.matches << ',' << s.inliers << ',' << s.success << ',' << s.new_keyframe << '\n';
+        csv << timestamp        << ','
+            << s.matches        << ','
+            << s.inliers        << ','
+            << s.success        << ','
+            << s.new_keyframe   << ','
+            << s.loop_candidate << ','
+            << s.loop_score     << '\n';
         trajectory.push_back({timestamp, pose});
 
         if (i % 100 == 0) {
