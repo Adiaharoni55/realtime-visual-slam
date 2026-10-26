@@ -48,6 +48,7 @@ add_library(rtvm_core
     src/motion.cpp
     src/visual_odometry.cpp
     src/pose_graph.cpp
+    src/loop_detector.cpp
 )
 
 # find the version
