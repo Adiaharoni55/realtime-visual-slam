@@ -37,6 +37,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)   # plain standard C++, no compiler-specific extra
 # Write compile_commands.json so VS Code understands the project
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Ceres -> glog -> gflags puts the same static library on the link line more than once.
+# That's harmless, but Apple's linker (Xcode 15+) warns about it, so silence that warning.
+if(APPLE)
+    include(CheckLinkerFlag)
+    check_linker_flag(CXX "-Wl,-no_warn_duplicate_libraries" RTVM_HAS_NO_WARN_DUP_LIBS)
+    if(RTVM_HAS_NO_WARN_DUP_LIBS)
+        add_link_options(-Wl,-no_warn_duplicate_libraries)
+    endif()
+endif()
+
 # ---- Library: the reusable SLAM code ----
 add_library(rtvm_core
     src/version.cpp
