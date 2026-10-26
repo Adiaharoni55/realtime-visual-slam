@@ -51,16 +51,13 @@ struct RelativePoseError {
 
 void PoseGraph::checkId(int id) const {
     if (id < 0 || id >= numNodes()) {
-        throw std::out_of_range("PoseGraph: invalid node id " + std::to_string(id)); 
+        throw std::out_of_range("PoseGraph: invalid node id " + std::to_string(id));
     }
 }
 
 int PoseGraph::addNode(const Pose& initial) {
-    // convert current pose to node 
-    Eigen::Vector3d p = initial.translation();
-    Eigen::Quaterniond q = Eigen::Quaterniond(initial.rotation());
-    
-    nodes_.push_back(Node{p, q});
+    // convert current pose to node
+    nodes_.push_back(Node{initial.translation(), Eigen::Quaterniond(initial.rotation())});
     return static_cast<int>(nodes_.size()) - 1;
 }
 
@@ -72,12 +69,10 @@ void PoseGraph::addEdge(int from, int to, const Pose& measured) {
 
 Pose PoseGraph::pose(int id) const {
     checkId(id);
-
     const Node& node = nodes_[id];
     Pose res = Pose::Identity();
     res.linear() = node.q.normalized().toRotationMatrix();
     res.translation() = node.p;
-
     return res;
 }
 
@@ -86,26 +81,22 @@ void PoseGraph::optimize() {
     if (edges_.empty()) {
         return;
     }
-
     ceres::Problem problem;
 
     // One manifold object for all quaternions: it lets Ceres move a quaternion only in
     // ways that keep it a valid rotation (length 1). The problem takes ownership of it.
     ceres::Manifold* quaternion_manifold = new ceres::EigenQuaternionManifold;
 
-    for (const Edge& e: edges_) {
+    for (const Edge& e : edges_) {
         Node& a = nodes_[e.from];
         Node& b = nodes_[e.to];
-
         problem.AddResidualBlock(
             RelativePoseError::create(e.measured),
             nullptr,   // no robust loss (plain squared error)
             a.p.data(), a.q.coeffs().data(),
-            b.p.data(), b.q.coeffs().data());    
-        
+            b.p.data(), b.q.coeffs().data());
         problem.SetManifold(a.q.coeffs().data(), quaternion_manifold);
         problem.SetManifold(b.q.coeffs().data(), quaternion_manifold);
-
     }
 
     // Fix node 0: moving all poses together wouldn't change any relative motion,
@@ -118,8 +109,13 @@ void PoseGraph::optimize() {
     }
 
     ceres::Solver::Options options;
-    options.linear_solver_type = ceres::DENSE_QR;   
-    options.logging_type = ceres::SILENT;           
+    // Sparse when Ceres was built with a sparse library: each edge touches only 2 nodes,
+    // so the problem is mostly zeros and a sparse solver skips them. Otherwise dense.
+    options.linear_solver_type =
+    options.sparse_linear_algebra_library_type != ceres::NO_SPARSE
+        ? ceres::SPARSE_NORMAL_CHOLESKY
+        : ceres::DENSE_QR;
+    options.logging_type = ceres::SILENT;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 }
