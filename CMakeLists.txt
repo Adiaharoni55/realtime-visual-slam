@@ -60,6 +60,7 @@ add_library(rtvm_core
     src/pose_graph.cpp
     src/loop_detector.cpp
     src/vocabulary.cpp
+    src/bundle_adjustment.cpp
 )
 
 # find the version
