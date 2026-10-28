@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <opencv2/core.hpp>
+#include <optional>
 
 #include "rtvm/camera.hpp"
 #include "rtvm/features.hpp"
@@ -27,5 +28,14 @@ cv::Mat distortionCoeffs(const PinholeCamera& camera);
 MotionEstimate estimateMotion(const FrameFeatures& a, const FrameFeatures& b,
                               const std::vector<cv::DMatch>& matches,
                               const cv::Mat& depth_a, const PinholeCamera& camera);
+
+// Remove lens distortion from raw pixels.
+// The result fits the plain pinhole model (camera.project / backproject, bundle adjustment).
+std::vector<Eigen::Vector2d> undistortPixels(const std::vector<cv::Point2f>& pixels, const PinholeCamera& camera);
+
+
+// Depth in meters at a raw pixel of a 16-bit TUM depth image (5000 = 1 m),
+// or empty if the pixel is outside the image or has no reading (0).
+std::optional<double> depthAt(const cv::Mat& depth, const cv::Point2f& pixel);
 
 }  // namespace rtvm

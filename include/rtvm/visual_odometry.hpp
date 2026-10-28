@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "rtvm/camera.hpp"
@@ -37,6 +38,14 @@ struct TrackStats {
     bool loop_accepted = false;                     // true if the loop edge was added
 };
 
+// Size and connectivity of the local map. A point seen by one keyframe only gives
+// bundle adjustment nothing to work with, so the observations per point matter.
+struct MapStats {
+    int points = 0;
+    int observations = 0;      // summed over all points
+    int points_3plus = 0;      // points seen by at least 3 keyframes
+};
+
 // Frame-to-keyframe visual odometry: estimates the camera pose of each new frame
 // by matching it against the current keyframe. A new keyframe is chosen when the
 // camera moved or rotated enough, or when there are too few inliers.
@@ -67,12 +76,28 @@ public:
     int keyframes() const { return graph_.numNodes(); }
     const TrackStats& lastStats() const { return last_stats_; }
     const PoseGraph& graph() const { return graph_; }
+    MapStats mapStats() const;
+
 
 private:
     // Where a frame was tracked from: its keyframe, and its pose relative to that keyframe.
     struct FrameAnchor {
         int keyframe_id = 0;
         Pose relative = Pose::Identity();
+    };
+
+    // Everything stored per keyframe (index = graph id).
+    struct Keyframe {
+        FrameFeatures features;
+        cv::Mat depth;
+        std::vector<Eigen::Vector2d> undistorted;   // undistorted keypoint pixels (for BA)
+        std::vector<int> map_point;                 // per keypoint: its map point id, or -1
+    };
+
+    // A 3D point and the keyframes that saw it.
+    struct MapPoint {
+        Eigen::Vector3d position;                          // world coordinates
+        std::vector<std::pair<int, int>> observations;     // (keyframe id, keypoint index)
     };
 
     // Configuration
@@ -88,9 +113,8 @@ private:
     std::unique_ptr<LoopDetector> loop_detector_;   // empty = loop detection off
     Pose keyframe_pose_ = Pose::Identity();         // world pose of the current keyframe
     bool has_keyframe_ = false;                     // false until the first frame has been seen
-    // every keyframe's features and depth, by graph id (for loop verification)
-    std::vector<FrameFeatures> keyframe_features_;
-    std::vector<cv::Mat> keyframe_depths_;
+    std::vector<Keyframe> keyframes_;               // every keyframe's data, by graph id
+    std::vector<MapPoint> map_points_;              // the local map, id = index
     int keyframe_id_ = 0;                           // the graph id of the current keyframe
     int loop_edges_ = 0;
 
@@ -98,8 +122,11 @@ private:
     TrackStats last_stats_;
     std::vector<FrameAnchor> anchors_;
 
-    // Makes the given frame the new keyframe and adds it to the graph.
-    void setKeyframe(FrameFeatures&& features, const cv::Mat& depth);
+    // associations: (keypoint in the current keyframe, keypoint in the new one) for matches
+    // that PnP accepted. They continue existing map points into the new keyframe.
+    void setKeyframe(FrameFeatures&& features, const cv::Mat& depth,
+                    const std::vector<std::pair<int, int>>& associations = {});
+
 };
 
 }  // namespace rtvm

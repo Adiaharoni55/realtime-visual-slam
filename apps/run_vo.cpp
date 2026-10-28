@@ -144,6 +144,7 @@ int main(int argc, char** argv) {
         optimized_trajectory.push_back({trajectory[i].timestamp, optimized[i]});
     }
     rtvm::writeTumTrajectory((output_dir / "trajectory.txt").string(), optimized_trajectory);
+    const rtvm::MapStats map = vo.mapStats();
 
     std::cout << "Graph: " << vo.graph().numNodes() << " nodes, " << vo.graph().numEdges() << " edges ("
               << vo.loopEdges() << " loops)\n"
@@ -152,7 +153,10 @@ int main(int argc, char** argv) {
               << "Average time per frame: " << ms / frames.size() << " ms\n"
               << "Saved " << (output_dir / "trajectory_vo.txt").string() << ", "
               << (output_dir / "trajectory.txt").string() << " and "
-              << (output_dir / "stats.csv").string() << '\n';
+              << (output_dir / "stats.csv").string() << '\n'
+              << "Map: " << map.points << " points, " << map.observations << " observations ("
+              << (map.points > 0 ? double(map.observations) / map.points : 0.0)
+              << " per point), " << map.points_3plus << " seen by 3+ keyframes\n";
 
     return 0;
 }
