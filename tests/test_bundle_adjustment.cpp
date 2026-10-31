@@ -188,3 +188,39 @@ TEST_F(BundleAdjusterTest, InvalidIdsThrow) {
     EXPECT_THROW(ba.pose(1), std::out_of_range);
     EXPECT_THROW(ba.point(1), std::out_of_range);
 }
+
+// With one fixed pose, pixels alone can't tell the scale: scaling every other camera and every
+// point about camera 0 leaves all pixels unchanged. Measured depths pin it down.
+TEST_F(BundleAdjusterTest, DepthPinsScaleWithOneFixedPose) {
+    // Start: cameras 1 and 2 and all points at 1.1x the true scale (camera 0 is at the origin),
+    // so every pixel is still exact and only the depths disagree.
+    std::vector<rtvm::Pose> start_poses = true_poses;
+    std::vector<Eigen::Vector3d> start_points = true_points;
+    for (int i = 1; i < 3; ++i) start_poses[i].translation() *= 1.1;
+    for (Eigen::Vector3d& p : start_points) p *= 1.1;
+
+    auto solve = [&](bool with_depth) {
+        rtvm::BundleAdjuster ba(camera);
+        for (int i = 0; i < 3; ++i) ba.addPose(start_poses[i], /*fixed=*/i == 0);
+        for (const Eigen::Vector3d& p : start_points) ba.addPoint(p);
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 50; ++j) {
+                const double depth = (true_poses[i].inverse() * true_points[j]).z();
+                ba.addObservation(i, j, pixel(i, j), with_depth ? depth : 0.0);
+            }
+        }
+        ba.optimize();
+        return ba;
+    };
+
+    const rtvm::BundleAdjuster with_depth = solve(true);
+    EXPECT_LT(camera2Error(with_depth), 1e-3);
+    for (int j = 0; j < 50; ++j) {
+        EXPECT_LT((with_depth.point(j) - true_points[j]).norm(), 1e-3) << "point " << j;
+    }
+
+    // Without depth the wrong scale fits the pixels perfectly, so nothing moves:
+    // camera 2 stays ~4 cm off (0.4 m x 0.1).
+    const rtvm::BundleAdjuster pixels_only = solve(false);
+    EXPECT_GT(camera2Error(pixels_only), 1e-2);
+}

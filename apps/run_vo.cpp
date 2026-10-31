@@ -19,15 +19,17 @@ void printUsage(const char* program) {
     std::cerr << "Usage: " << program
               << " <TUM folder> <camera yaml>"
               << " [max_translation_m] [max_rotation_deg] [min_inliers]"
-              << " [--vocab <file>]\n";
+              << " [--vocab <file>] [--ba]\n";
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-    // Split the arguments: "--vocab <file>" is named (anywhere), all others are positional, in order.
+    // Split the arguments: "--vocab <file>" and "--ba" are named (anywhere),
+    // all others are positional, in order.
     std::vector<std::string> positional;
     std::string vocab_path;   // empty = no loop detection
+    bool local_ba = false;    // --ba: local bundle adjustment after each keyframe
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--vocab") {
@@ -36,6 +38,8 @@ int main(int argc, char** argv) {
                 return 1;
             }
             vocab_path = argv[++i];   // ++i: the path is consumed here, not as a positional
+        } else if (arg == "--ba") {
+            local_ba = true;          // a flag: no value follows
         } else {
             positional.push_back(arg);
         }
@@ -62,9 +66,13 @@ int main(int argc, char** argv) {
     if (positional.size() > 2) params.max_translation  = std::stod(positional[2]);
     if (positional.size() > 3) params.max_rotation_deg = std::stod(positional[3]);
     if (positional.size() > 4) params.min_inliers      = std::stoi(positional[4]);
+    params.local_ba = local_ba;
 
     std::cout << "Keyframe thresholds: " << params.max_translation << " m, "
               << params.max_rotation_deg << " deg, " << params.min_inliers << " inliers\n";
+    std::cout << "Local BA: "
+              << (params.local_ba ? "on (window " + std::to_string(params.ba_window) + ")" : "off")
+              << '\n';
 
     auto frames = rtvm::associateTum(rtvm::readTumFileList(dir + "/rgb.txt"),
                                      rtvm::readTumFileList(dir + "/depth.txt"),
@@ -103,7 +111,9 @@ int main(int argc, char** argv) {
             << s.loop_score     << ','
             << s.loop_inliers   << ','
             << s.loop_accepted  << ','
-            << s.rejected       << '\n';
+            << s.rejected       << '\n'
+            << "Local BA: " << (params.local_ba ? "on (window " + std::to_string(params.ba_window) + ")" : "off") << '\n';
+
         trajectory.push_back({timestamp, pose});
 
         if (i % 100 == 0) {

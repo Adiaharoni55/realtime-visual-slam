@@ -36,8 +36,11 @@ public:
     int addPoint(const Eigen::Vector3d& world);
 
     // "Pose pose_id saw point point_id at this pixel". The pixel must be undistorted.
+    // depth: the depth camera's measurement of this point in meters, or 0 if there is none.
+    // With depth, BA also pulls the point's depth in the camera toward the measurement
+    // (RGB-D bundle adjustment); pixels alone constrain depth poorly when views are close.
     // Throws std::out_of_range for an id that doesn't exist.
-    void addObservation(int pose_id, int point_id, const Eigen::Vector2d& pixel);
+    void addObservation(int pose_id, int point_id, const Eigen::Vector2d& pixel, double depth = 0.0);
 
     // Adjusts all non-fixed poses and all observed points to minimize the reprojection errors.
     // Huber loss: quadratic up to huber_delta pixels, linear beyond, so outliers count less.
@@ -66,6 +69,7 @@ private:
         int pose_id;
         int point_id;
         Eigen::Vector2d pixel;   // undistorted
+        double depth;            // measured depth in meters, 0 = none
     };
 
     void checkPoseId(int id) const;    // throws std::out_of_range

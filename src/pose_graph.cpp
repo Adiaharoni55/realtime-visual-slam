@@ -55,16 +55,29 @@ void PoseGraph::checkId(int id) const {
     }
 }
 
+const PoseGraph::Edge& PoseGraph::edge(int index) const {
+    if (index < 0 || index >= numEdges()) {
+        throw std::out_of_range("PoseGraph: invalid edge id " + std::to_string(index));
+    }
+    return edges_[index];
+}
+
+void PoseGraph::setPose(int id, const Pose& pose) {
+    checkId(id);
+    // Assignment overwrites the old values in place: Node holds plain values, nothing to free.
+    nodes_[id] = Node{pose.translation(), Eigen::Quaterniond(pose.rotation())};
+}
+
 int PoseGraph::addNode(const Pose& initial) {
     // convert current pose to node
     nodes_.push_back(Node{initial.translation(), Eigen::Quaterniond(initial.rotation())});
     return static_cast<int>(nodes_.size()) - 1;
 }
 
-void PoseGraph::addEdge(int from, int to, const Pose& measured) {
+void PoseGraph::addEdge(int from, int to, const Pose& measured, bool loop) {
     checkId(from);
     checkId(to);
-    edges_.push_back(Edge{from, to, measured});
+    edges_.push_back(Edge{from, to, measured, loop});
 }
 
 Pose PoseGraph::pose(int id) const {
@@ -118,6 +131,14 @@ void PoseGraph::optimize() {
     options.logging_type = ceres::SILENT;
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
+}
+
+void PoseGraph::refreshChainEdges() {
+    for (Edge& e : edges_) {
+        if (!e.loop) {
+            e.measured = relativePose(pose(e.from), pose(e.to));
+        }
+    }
 }
 
 }  // namespace rtvm

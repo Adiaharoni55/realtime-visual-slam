@@ -112,3 +112,49 @@ TEST(PoseGraphTest, LoopEdgeReducesDrift) {
               << after * 100 << " cm\n";
     EXPECT_LT(after, 0.5 * before);
 }
+
+// setPose replaces one node's pose (e.g. with a bundle adjustment result) and nothing else.
+TEST(PoseGraphTest, SetPoseOverwritesNode) {
+    rtvm::PoseGraph graph;
+    graph.addNode(rtvm::Pose::Identity());
+    graph.addNode(rtvm::Pose::Identity());
+
+    const double w = std::sqrt(1.0 - 0.01 - 0.04 - 0.0025);
+    const rtvm::Pose p = rtvm::poseFromTum(0.3, -0.1, 0.5, 0.1, 0.2, 0.05, w);
+    graph.setPose(1, p);
+
+    EXPECT_TRUE(graph.pose(1).isApprox(p, 1e-12));
+    EXPECT_TRUE(graph.pose(0).isApprox(rtvm::Pose::Identity(), 1e-12));   // untouched
+    EXPECT_THROW(graph.setPose(5, p), std::out_of_range);
+    EXPECT_THROW(graph.setPose(-1, p), std::out_of_range);
+}
+
+// After a pose moves, chain edges are re-measured from the poses; a loop edge keeps its measurement.
+TEST(PoseGraphTest, RefreshChainEdgesFollowsPoses) {
+    auto at_x = [](double x) {
+        rtvm::Pose pose = rtvm::Pose::Identity();
+        pose.translation() = Eigen::Vector3d(x, 0.0, 0.0);
+        return pose;
+    };
+    rtvm::PoseGraph graph;
+    for (double x : {0.0, 1.0, 2.0}) {
+        graph.addNode(at_x(x));
+    }
+    graph.addEdge(0, 1, rtvm::relativePose(at_x(0.0), at_x(1.0)));   // chain
+    graph.addEdge(1, 2, rtvm::relativePose(at_x(1.0), at_x(2.0)));   // chain
+    const rtvm::Pose loop_measured = at_x(-2.1);                      // as if PnP measured it
+    graph.addEdge(2, 0, loop_measured, /*loop=*/true);
+
+    graph.setPose(1, at_x(1.5));   // e.g. moved by bundle adjustment
+    graph.refreshChainEdges();
+
+    EXPECT_FALSE(graph.edge(0).loop);
+    EXPECT_FALSE(graph.edge(1).loop);
+    EXPECT_TRUE(graph.edge(2).loop);
+    EXPECT_TRUE(graph.edge(0).measured.isApprox(
+        rtvm::relativePose(graph.pose(0), graph.pose(1)), 1e-12));   // now 1.5 m, not 1.0
+    EXPECT_TRUE(graph.edge(1).measured.isApprox(
+        rtvm::relativePose(graph.pose(1), graph.pose(2)), 1e-12));   // now 0.5 m
+    EXPECT_TRUE(graph.edge(2).measured.isApprox(loop_measured, 1e-12));   // loop: unchanged
+    EXPECT_THROW(graph.edge(3), std::out_of_range);
+}

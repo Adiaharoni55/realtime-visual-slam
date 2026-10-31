@@ -1,12 +1,15 @@
 #include "rtvm/visual_odometry.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <unordered_map>
 #include <vector>
 
 #include "rtvm/motion.hpp"
+#include "rtvm/bundle_adjustment.hpp"
 
 namespace rtvm {
 
@@ -51,7 +54,7 @@ void VisualOdometry::setKeyframe(FrameFeatures&& features, const cv::Mat& depth,
             last_stats_.loop_inliers = static_cast<int>(est.inliers.size());
             // Verify geometrically: PnP from the old keyframe to this one. Only then trust it as a loop edge.
             if (est.success && last_stats_.loop_inliers >= params_.min_loop_inliers) {
-                graph_.addEdge(c, id, est.motion);
+                graph_.addEdge(c, id, est.motion, /*loop=*/true);
                 ++loop_edges_;
                 last_stats_.loop_accepted = true;
             }
@@ -105,6 +108,8 @@ void VisualOdometry::setKeyframe(FrameFeatures&& features, const cv::Mat& depth,
         (loop_detector_ && loop_detector_->size() != n)) {
         throw std::logic_error("VisualOdometry: keyframe data and graph ids out of sync");
     }
+
+    if (params_.local_ba) localBundleAdjust();
 }
 
 Pose VisualOdometry::track(const cv::Mat& gray, const cv::Mat& depth) {
@@ -181,6 +186,83 @@ MapStats VisualOdometry::mapStats() const {
     }
 
     return result;
+}
+
+void VisualOdometry::localBundleAdjust() {
+    // 1. Which keyframes are free: the newest ba_window ones (never 0 or 1).
+    const int n = static_cast<int>(keyframes_.size());
+    const int first_free = std::max(2, n - params_.ba_window);
+    if (first_free >= n) return;                                 // nothing to adjust yet
+
+    // 2. The points seen by the free keyframes and observed at least twice in total
+    //    (a point seen once gives BA nothing to compare).
+    std::vector<int> point_ids;                       // map point ids in the problem (BA point order)
+    std::unordered_map<int, int> point_to_ba;         // map point id -> BA point id
+    for (int k = first_free; k < n; ++k) {
+        for (int m : keyframes_[k].map_point) {
+            if (m != -1 && map_points_[m].observations.size() >= 2 && !point_to_ba.count(m)) {
+                point_to_ba[m] = static_cast<int>(point_ids.size());
+                point_ids.push_back(m);
+            }
+        }
+    }
+    if (point_ids.empty()) return;
+
+    // 3. Every keyframe that observes one of those points: the free ones, plus older
+    //    (fixed) ones that add constraints. Sorted oldest first.
+    std::vector<int> kf_ids;
+    for (int m : point_ids) {
+        for (const auto& [kf, kp] : map_points_[m].observations) {
+            kf_ids.push_back(kf);
+        }
+    }
+    std::sort(kf_ids.begin(), kf_ids.end());
+    kf_ids.erase(std::unique(kf_ids.begin(), kf_ids.end()), kf_ids.end());
+    std::unordered_map<int, int> kf_to_ba;            // keyframe id -> BA pose id
+    for (int i = 0; i < static_cast<int>(kf_ids.size()); ++i) {
+        kf_to_ba[kf_ids[i]] = i;
+    }
+
+    // 4. At least two fixed poses: pixels don't change if the whole scene is scaled, so one
+    //    fixed pose can't pin down the scale. Points are continued only from the previous
+    //    keyframe, so often only one keyframe outside the window sees them; then the oldest
+    //    window keyframes in the problem are fixed too, until there are two.
+    if (kf_ids.size() < 3) return;                    // need two fixed and at least one free
+    int fix_below = first_free;                       // keyframes with id < fix_below don't move
+    if (kf_ids[1] >= fix_below) {
+        fix_below = kf_ids[1] + 1;
+    }
+
+    // 5. Build the problem and solve.
+    BundleAdjuster ba(camera_);
+    for (int kf : kf_ids) {
+        ba.addPose(graph_.pose(kf), /*fixed=*/kf < fix_below);
+    }
+    for (int m : point_ids) {
+        ba.addPoint(map_points_[m].position);
+    }
+    for (int j = 0; j < static_cast<int>(point_ids.size()); ++j) {
+        for (const auto& [kf, kp] : map_points_[point_ids[j]].observations) {
+            // RGB-D: the measured depth at this keypoint (raw pixel), 0 if there's no reading.
+            const Keyframe& k = keyframes_[kf];
+            const double depth = depthAt(k.depth, k.features.keypoints[kp].pt).value_or(0.0);
+            ba.addObservation(kf_to_ba.at(kf), j, k.undistorted[kp], depth);
+        }
+    }
+    ba.optimize();
+
+    // 6. Write back: free poses to the graph, points to the map, then the current state.
+    for (int i = 0; i < static_cast<int>(kf_ids.size()); ++i) {
+        if (kf_ids[i] >= fix_below) graph_.setPose(kf_ids[i], ba.pose(i));
+    }
+    for (int j = 0; j < static_cast<int>(point_ids.size()); ++j) {
+        map_points_[point_ids[j]].position = ba.point(j);
+    }
+    // The newest keyframe is in the window, so its pose may have changed; right now the
+    // current frame is that keyframe. (trajectory() follows automatically: frames are stored
+    // relative to their keyframe's graph pose.)
+    keyframe_pose_ = graph_.pose(keyframe_id_);
+    pose_ = keyframe_pose_;
 }
 
 } // namespace rtvm

@@ -21,6 +21,8 @@ struct VoParams {
     int min_loop_inliers = 50;                      // PnP inliers needed to accept a loop candidate
     int min_track_inliers = 20;                     // fewer PnP inliers than this: don't trust the estimate
     double max_frame_translation = 0.15;            // meters the camera may move between two frames
+    bool local_ba = false;                          // local bundle adjustment after each new keyframe
+    int ba_window = 10;                             // how many of the newest keyframes BA may move
 };
 
 // What happened inside track() for the last frame.
@@ -66,9 +68,14 @@ public:
     // Equal to the poses track() returned until the graph is optimized.
     std::vector<Pose> trajectory() const;
 
-    // Optimizes the pose graph (uses the loop edges). Afterwards trajectory() returns the corrected poses.
-    // Call once, at the end. Tracking state isn't updated.
-    void optimize() { graph_.optimize(); }
+    // Optimizes the pose graph (uses the loop edges). Chain edges are first re-measured from the
+    // current poses, so poses refined by local BA aren't pulled back to the old PnP values.
+    // Afterwards trajectory() returns the corrected poses. Call once, at the end.
+    // Tracking state isn't updated.
+    void optimize() {
+        graph_.refreshChainEdges();
+        graph_.optimize();
+    }
 
     // Getters
     int failures() const { return failures_; }
@@ -127,6 +134,9 @@ private:
     void setKeyframe(FrameFeatures&& features, const cv::Mat& depth,
                     const std::vector<std::pair<int, int>>& associations = {});
 
+    // Bundle adjustment over the newest ba_window keyframes and the map points they see;
+    // writes the refined poses and points back
+    void localBundleAdjust();
 };
 
 }  // namespace rtvm

@@ -44,6 +44,31 @@ struct ReprojectionError {
     double u_obs_, v_obs_, fx_, fy_, cx_, cy_;
 };
 
+// Residual for a measured depth (RGB-D): how far the point's depth in the camera is from the
+// measurement, in standard deviations. Depth cameras get noisier with distance; sigma = 0.01 z^2
+// (1 cm at 1 m, 4 cm at 2 m) is the usual Kinect-style model. In sigma units it's comparable to
+// the pixel residuals (~1 px noise), so one Huber loss fits both.
+struct DepthError {
+    explicit DepthError(double depth) : z_measured_(depth), sigma_(0.01 * depth * depth) {}
+
+    template <typename T>
+    bool operator()(const T* p_ptr, const T* q_ptr, const T* X_ptr, T* r_ptr) const {
+        Eigen::Map<const Eigen::Matrix<T, 3, 1>> p(p_ptr);
+        Eigen::Map<const Eigen::Quaternion<T>>   q(q_ptr);
+        Eigen::Map<const Eigen::Matrix<T, 3, 1>> X(X_ptr);
+
+        const Eigen::Matrix<T, 3, 1> X_cam = q.conjugate() * (X - p);   // world -> camera
+        r_ptr[0] = (X_cam.z() - T(z_measured_)) / T(sigma_);
+        return true;
+    }
+
+    static ceres::CostFunction* create(double depth) {
+        return new ceres::AutoDiffCostFunction<DepthError, 1, 3, 4, 3>(new DepthError(depth));
+    }
+
+    double z_measured_, sigma_;
+};
+
 }  // namespace
 
 // The public function from the header. It uses the struct above with plain doubles.
@@ -87,10 +112,11 @@ int BundleAdjuster::addPoint(const Eigen::Vector3d& world) {
     return numPoints() - 1;
 }
 
-void BundleAdjuster::addObservation(int pose_id, int point_id, const Eigen::Vector2d& pixel) {
+void BundleAdjuster::addObservation(int pose_id, int point_id, const Eigen::Vector2d& pixel,
+                                    double depth) {
     checkPoseId(pose_id);
     checkPointId(point_id);
-    observations_.push_back({pose_id, point_id, pixel});
+    observations_.push_back(Observation{pose_id, point_id, pixel, depth});
 }
 
 void BundleAdjuster::optimize(double huber_delta) {
@@ -113,6 +139,10 @@ void BundleAdjuster::optimize(double huber_delta) {
         Eigen::Vector3d& X = points_[o.point_id];
         problem.AddResidualBlock(ReprojectionError::create(o.pixel, camera_), loss,
                                  cam.p.data(), cam.q.coeffs().data(), X.data());
+        if (o.depth > 0.0) {   // RGB-D: the measured depth constrains the same unknowns
+            problem.AddResidualBlock(DepthError::create(o.depth), loss,
+                                     cam.p.data(), cam.q.coeffs().data(), X.data());
+        }
         problem.SetManifold(cam.q.coeffs().data(), quaternion_manifold);
     }
 
