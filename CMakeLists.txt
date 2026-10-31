@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 # Project name, version, and language (CXX = C++)
-project(rtvm VERSION 0.1.0 LANGUAGES CXX)
+project(rtvm VERSION 0.2.0 LANGUAGES CXX)
 
 # ---- Dependencies (installed by vcpkg from vcpkg.json) ----
 find_package(Eigen3 CONFIG REQUIRED)
