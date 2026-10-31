@@ -55,6 +55,12 @@ On fr2/desk, the ATE over time is U-shaped: 22–26 cm at the start, about 4 cm 
 
 ![ATE over time on fr2/desk](images/fr2_desk_ate.png)
 
+## 6. Bundle adjustment and loop closure interact
+
+BA alone improves ATE on all four sequences, and loop closure alone improves it strongly. Combined, the result is better than loop closure alone on fr1/desk and fr1/room, but worse on fr2/desk (4.6 → 6.1 cm).
+
+An experiment explains part of it: without re-measuring the chain edges from the BA-refined poses, the pose graph converges to exactly the loop-closure-only result (identical to 4 decimals). Its solution depends only on the edges, so BA's work is discarded. With re-measured edges, BA counts, but every edge is still weighted equally, although BA-refined chain edges and PnP loop edges differ in accuracy. Weighting edges by their uncertainty, and a global BA after loop closure with merged map points (as in ORB-SLAM), are the next steps.
+
 ## Next steps
 
 | Problem | Planned fix |

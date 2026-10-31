@@ -4,7 +4,7 @@
 
 A real-time C++17 SLAM system that estimates motion and builds a 3D map from a camera and a LiDAR. A deep-learning segmentation model (ONNX Runtime) masks moving objects such as people and cars, so they don't corrupt tracking.
 
-> **Status: v0.1, visual odometry.** RGB-D visual odometry runs faster than real time (~15 ms/frame) and is evaluated on three TUM sequences. Next: bundle adjustment and loop closure.
+> **Status: v0.2, backend.** RGB-D visual odometry with local bundle adjustment, bag-of-words loop closure and pose-graph optimization, evaluated on four TUM sequences. Next: masking moving objects with a deep-learning model.
 
 ## Progress
 
@@ -13,7 +13,7 @@ A real-time C++17 SLAM system that estimates motion and builds a 3D map from a c
 | 1. Project setup: CMake, sanitizers, unit tests, CI on Linux / macOS / Windows | ✅ Done |
 | 2. Camera geometry: pinhole model, poses and quaternions, YAML camera config | ✅ Done |
 | 3. Visual odometry on TUM RGB-D | ✅ Done (v0.1) |
-| 4. Backend: bundle adjustment, pose graph, loop closure | Planned |
+| 4. Backend: bundle adjustment, pose graph, loop closure | ✅ Done (v0.2) |
 | 5. Masking moving objects with a deep-learning model (ONNX Runtime) | Planned |
 | 6. LiDAR + camera fusion on KITTI | Planned |
 | 7. Real-time performance: multithreading, profiling | Planned |
@@ -31,31 +31,39 @@ A real-time C++17 SLAM system that estimates motion and builds a 3D map from a c
 - **Visual odometry:** frame-to-keyframe tracking (new keyframe after 5 cm, 5° or too few inliers), writing a TUM-format trajectory and per-frame statistics.
 - **Evaluation:** ATE/RPE with evo on three sequences, a threshold sweep, and a [failure analysis](docs/failure-analysis.md).
 - **Unit tests** for all of the above (GoogleTest, including synthetic scenes with known motion), run in CI on every push.
+- **Sanity check:** rejects motion estimates with too few inliers or an impossible jump between frames.
+- **Local map + bundle adjustment:** 3D points with their observations; local BA over the last 10 keyframes (Ceres, Huber loss, reprojection and depth residuals).
+- **Loop closure:** an ORB vocabulary trained with DBoW2 (own tool, binary format), bag-of-words place recognition, PnP verification, and pose-graph optimization on SE(3).
 
 ## Results
 
-RGB-D visual odometry, no backend optimization yet. Release build, Apple Silicon. Evaluated with [evo](https://github.com/MichaelGrupp/evo) (`--align`; RPE over 1-second windows).
+ATE (RMSE, cm) on TUM RGB-D, evaluated with [evo](https://github.com/MichaelGrupp/evo) (`--align`). Release build, Apple Silicon.
 
-| TUM sequence | Path | Frames | ATE | RPE | Speed | Failures |
-| --- | --- | --- | --- | --- | --- | --- |
-| fr1/xyz | short, back and forth | 796 | 5.00 cm | 2.34 cm/s | 15.1 ms/frame | 0 |
-| fr2/desk | 18.9 m loop around a desk | 2,965 | 13.3 cm | 1.62 cm/s | 14.8 ms/frame | 0 |
-| fr1/desk | fast handheld | 596 | 6.49 cm | 3.97 cm/s | 15.1 ms/frame | 0 |
+| Sequence | Odometry | + local BA | + loop closure | + BA + loop closure |
+| --- | --- | --- | --- | --- |
+| fr1/xyz* | 5.0 | 3.9 | **1.3** | 1.4 |
+| fr1/desk* | 6.5 | 5.3 | 4.1 | **3.6** |
+| fr2/desk | 13.3 | 9.5 | **4.6** | 6.1 |
+| fr1/room* | 30.3 | 28.9 | 9.8 | **9.3** |
 
-Keyframes vs. frame-to-frame tracking on fr2/desk: **ATE 45.8 → 13.3 cm**, RPE 4.33 → 1.62 cm/s.
+\* in the ORB vocabulary's training set; fr2/desk is held out.
 
-![Estimated trajectory vs. ground truth on fr2/desk (top view, colored by error)](docs/images/fr2_desk_map.png)
+Speed: ~15 ms/frame for odometry, ~24–33 ms/frame with local BA (each BA run takes 44–79 ms and runs on keyframes only).
 
-The remaining error is mostly slow drift: the loop doesn't fully close. That's what the backend (Step 4) addresses. Where and why tracking struggles is described in the [failure analysis](docs/failure-analysis.md).
+**Loop closure** cuts the error by 2.9× on fr2/desk and 3.3× on fr1/room. Bag-of-words finds the revisited places, and PnP verification rejects false candidates: on fr1/room, all 12 candidates between places 1.2–2.1 m apart were rejected.
+
+![Accepted loop candidates on the true path of fr2/desk](docs/images/fr2_desk_loop_pairs.png)
+![fr2/desk with loop closure: the loop closes](docs/images/fr2_desk_map_loop.png)
+
+**BA and loop closure don't simply add up.** Combined, they're best on fr1/desk and fr1/room, but worse than loop closure alone on fr2/desk. All edges in the pose graph are weighted equally, although BA-refined and PnP-measured edges differ in accuracy; weighting edges by their uncertainty is future work. Details in the [failure analysis](docs/failure-analysis.md).
 
 ### Reproduce
 
 ```bash
 cmake --preset release && cmake --build --preset release
-./build/release/rtvm_run_vo data/rgbd_dataset_freiburg2_desk configs/tum_fr2.yaml   # optional: [max_m] [max_deg] [min_inliers]
+./build/release/rtvm_train_vocab models/orb_vocab.bin data/rgbd_dataset_freiburg1_xyz data/rgbd_dataset_freiburg1_desk data/rgbd_dataset_freiburg1_room
+./build/release/rtvm_run_vo data/rgbd_dataset_freiburg2_desk configs/tum_fr2.yaml --ba --vocab models/orb_vocab.bin
 evo_ape tum data/rgbd_dataset_freiburg2_desk/groundtruth.txt output/trajectory.txt --align
-evo_rpe tum data/rgbd_dataset_freiburg2_desk/groundtruth.txt output/trajectory.txt --align --delta 30 --delta_unit f --all_pairs
-python scripts/plot_stats.py   # inliers and keyframes over time
 ```
 
 ## Planned pipeline
@@ -69,7 +77,7 @@ python scripts/plot_stats.py   # inliers and keyframes over time
 
 ## Tech stack
 
-C++17 · CMake + presets · vcpkg · Eigen · OpenCV · yaml-cpp · GoogleTest · GitHub Actions · ASan / UBSan · evo (Python)  
+C++17 · CMake + presets · vcpkg · Eigen · OpenCV · yaml-cpp · GoogleTest · GitHub Actions · ASan / UBSan · evo (Python)
 *Planned:* Ceres, ONNX Runtime, Open3D, Rerun, Docker, ROS 2
 
 ## Build
