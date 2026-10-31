@@ -127,6 +127,7 @@ int main(int argc, char** argv) {
 
     // Check: the poses rebuilt from the graph must match the ones track() returned
     // (nothing was optimized yet, so any difference means the bookkeeping is wrong).
+    // With local BA, keyframes move after they were tracked, so the difference is BA's correction.
     const std::vector<rtvm::Pose> from_graph = vo.trajectory();
     if (from_graph.size() != trajectory.size()) {
         std::cerr << "Graph trajectory has " << from_graph.size() << " poses, expected "
@@ -158,9 +159,19 @@ int main(int argc, char** argv) {
 
     std::cout << "Graph: " << vo.graph().numNodes() << " nodes, " << vo.graph().numEdges() << " edges ("
               << vo.loopEdges() << " loops)\n"
-              << "Max difference graph vs. tracked: " << max_diff << " m\n"
+              << (params.local_ba ? "Max BA correction (graph vs. tracked): "
+                                  : "Max difference graph vs. tracked: ")
+              << max_diff << " m\n"
               << "Failed frames: " << vo.failures() << '\n'
-              << "Average time per frame: " << ms / frames.size() << " ms\n"
+              << "Average time per frame: " << ms / frames.size() << " ms\n";
+    if (params.local_ba) {
+        // BA runs inside track() (synchronously), so it's part of the time per frame above.
+        std::cout << "Local BA: " << vo.baRuns() << " runs, " << vo.baSeconds() << " s total ("
+                  << (vo.baRuns() > 0 ? 1000.0 * vo.baSeconds() / vo.baRuns() : 0.0)
+                  << " ms per run, " << 1000.0 * vo.baSeconds() / frames.size()
+                  << " ms per frame on average)\n";
+    }
+    std::cout
               << "Saved " << (output_dir / "trajectory_vo.txt").string() << ", "
               << (output_dir / "trajectory.txt").string() << " and "
               << (output_dir / "stats.csv").string() << '\n'

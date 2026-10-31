@@ -26,7 +26,10 @@ Eigen::Vector2d reprojectionResidual(const PinholeCamera& camera, const Pose& ca
 class BundleAdjuster {
 public:
     // The intrinsics used for every observation.
-    explicit BundleAdjuster(PinholeCamera camera);
+    // depth_noise: measured depths are trusted to sigma = depth_noise * z^2 (meters).
+    // 0.01 (1 cm at 1 m, 4 cm at 2 m) is deliberately conservative; the commonly cited Kinect
+    // model (Khoshelham & Elberink, 2012) is ~0.0014 (6 mm at 2 m). A tuning parameter.
+    explicit BundleAdjuster(PinholeCamera camera, double depth_noise = 0.01);
 
     // Add a camera pose (camera -> world, initial guess). fixed = the optimizer may not move it.
     // Returns its id (0, 1, 2, ... in the order added).
@@ -76,6 +79,7 @@ private:
     void checkPointId(int id) const;   // throws std::out_of_range
 
     PinholeCamera camera_;
+    double depth_noise_;   // sigma = depth_noise_ * z^2 for depth residuals
     std::vector<PoseBlock> poses_;
     std::vector<Eigen::Vector3d> points_;
     std::vector<Observation> observations_;

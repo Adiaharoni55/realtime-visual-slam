@@ -45,11 +45,12 @@ struct ReprojectionError {
 };
 
 // Residual for a measured depth (RGB-D): how far the point's depth in the camera is from the
-// measurement, in standard deviations. Depth cameras get noisier with distance; sigma = 0.01 z^2
-// (1 cm at 1 m, 4 cm at 2 m) is the usual Kinect-style model. In sigma units it's comparable to
-// the pixel residuals (~1 px noise), so one Huber loss fits both.
+// measurement, in standard deviations. Depth cameras get noisier with distance:
+// sigma = depth_noise * z^2 (see BundleAdjuster's constructor). In sigma units it's comparable
+// to the pixel residuals (~1 px noise), so one Huber loss fits both.
 struct DepthError {
-    explicit DepthError(double depth) : z_measured_(depth), sigma_(0.01 * depth * depth) {}
+    DepthError(double depth, double depth_noise)
+        : z_measured_(depth), sigma_(depth_noise * depth * depth) {}
 
     template <typename T>
     bool operator()(const T* p_ptr, const T* q_ptr, const T* X_ptr, T* r_ptr) const {
@@ -62,8 +63,9 @@ struct DepthError {
         return true;
     }
 
-    static ceres::CostFunction* create(double depth) {
-        return new ceres::AutoDiffCostFunction<DepthError, 1, 3, 4, 3>(new DepthError(depth));
+    static ceres::CostFunction* create(double depth, double depth_noise) {
+        return new ceres::AutoDiffCostFunction<DepthError, 1, 3, 4, 3>(
+            new DepthError(depth, depth_noise));
     }
 
     double z_measured_, sigma_;
@@ -99,7 +101,8 @@ void BundleAdjuster::checkPointId(int id) const {
     }
 }
 
-BundleAdjuster::BundleAdjuster(PinholeCamera camera) : camera_(std::move(camera)) {}
+BundleAdjuster::BundleAdjuster(PinholeCamera camera, double depth_noise)
+    : camera_(std::move(camera)), depth_noise_(depth_noise) {}
 
 int BundleAdjuster::addPose(const Pose& pose, bool fixed) {
     // Stored as position + quaternion: the form Ceres optimizes (as in the pose graph).
@@ -139,8 +142,11 @@ void BundleAdjuster::optimize(double huber_delta) {
         Eigen::Vector3d& X = points_[o.point_id];
         problem.AddResidualBlock(ReprojectionError::create(o.pixel, camera_), loss,
                                  cam.p.data(), cam.q.coeffs().data(), X.data());
-        if (o.depth > 0.0) {   // RGB-D: the measured depth constrains the same unknowns
-            problem.AddResidualBlock(DepthError::create(o.depth), loss,
+        // RGB-D: the measured depth constrains the same unknowns. The same Huber loss applies:
+        // the residual is in sigma units, so delta = 2 means "2 standard deviations", and a
+        // flying pixel at an object edge (background depth, meters off) only pulls linearly.
+        if (o.depth > 0.0) {
+            problem.AddResidualBlock(DepthError::create(o.depth, depth_noise_), loss,
                                      cam.p.data(), cam.q.coeffs().data(), X.data());
         }
         problem.SetManifold(cam.q.coeffs().data(), quaternion_manifold);

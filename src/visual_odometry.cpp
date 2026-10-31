@@ -1,6 +1,7 @@
 #include "rtvm/visual_odometry.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -189,6 +190,8 @@ MapStats VisualOdometry::mapStats() const {
 }
 
 void VisualOdometry::localBundleAdjust() {
+    const auto start = std::chrono::steady_clock::now();   // for baSeconds()
+
     // 1. Which keyframes are free: the newest ba_window ones (never 0 or 1).
     const int n = static_cast<int>(keyframes_.size());
     const int first_free = std::max(2, n - params_.ba_window);
@@ -233,10 +236,28 @@ void VisualOdometry::localBundleAdjust() {
         fix_below = kf_ids[1] + 1;
     }
 
+    //    A window keyframe with only a few observations in the problem (e.g. the one right after
+    //    a rejected frame: no associations to its predecessor) is barely connected, so the
+    //    problem would be degenerate along its pose. It's fixed instead: its observations still
+    //    constrain the points, it just doesn't move.
+    std::vector<int> observation_count(kf_ids.size(), 0);
+    for (int m : point_ids) {
+        for (const auto& [kf, kp] : map_points_[m].observations) {
+            ++observation_count[kf_to_ba.at(kf)];
+        }
+    }
+    std::vector<bool> fixed(kf_ids.size());
+    bool any_free = false;
+    for (std::size_t i = 0; i < kf_ids.size(); ++i) {
+        fixed[i] = kf_ids[i] < fix_below || observation_count[i] < params_.ba_min_observations;
+        any_free = any_free || !fixed[i];
+    }
+    if (!any_free) return;
+
     // 5. Build the problem and solve.
-    BundleAdjuster ba(camera_);
-    for (int kf : kf_ids) {
-        ba.addPose(graph_.pose(kf), /*fixed=*/kf < fix_below);
+    BundleAdjuster ba(camera_, params_.ba_depth_noise);
+    for (std::size_t i = 0; i < kf_ids.size(); ++i) {
+        ba.addPose(graph_.pose(kf_ids[i]), fixed[i]);
     }
     for (int m : point_ids) {
         ba.addPoint(map_points_[m].position);
@@ -253,7 +274,7 @@ void VisualOdometry::localBundleAdjust() {
 
     // 6. Write back: free poses to the graph, points to the map, then the current state.
     for (int i = 0; i < static_cast<int>(kf_ids.size()); ++i) {
-        if (kf_ids[i] >= fix_below) graph_.setPose(kf_ids[i], ba.pose(i));
+        if (!fixed[i]) graph_.setPose(kf_ids[i], ba.pose(i));
     }
     for (int j = 0; j < static_cast<int>(point_ids.size()); ++j) {
         map_points_[point_ids[j]].position = ba.point(j);
@@ -263,6 +284,9 @@ void VisualOdometry::localBundleAdjust() {
     // relative to their keyframe's graph pose.)
     keyframe_pose_ = graph_.pose(keyframe_id_);
     pose_ = keyframe_pose_;
+
+    ++ba_runs_;
+    ba_seconds_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
 
 } // namespace rtvm

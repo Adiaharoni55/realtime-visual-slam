@@ -23,6 +23,9 @@ struct VoParams {
     double max_frame_translation = 0.15;            // meters the camera may move between two frames
     bool local_ba = false;                          // local bundle adjustment after each new keyframe
     int ba_window = 10;                             // how many of the newest keyframes BA may move
+    int ba_min_observations = 20;                   // a window keyframe with fewer observations in
+                                                    // the problem is fixed, not free (else degenerate)
+    double ba_depth_noise = 0.01;                   // depth sigma = this * z^2 (see BundleAdjuster)
 };
 
 // What happened inside track() for the last frame.
@@ -80,6 +83,8 @@ public:
     // Getters
     int failures() const { return failures_; }
     int loopEdges() const { return loop_edges_; }
+    int baRuns() const { return ba_runs_; }              // how many local BAs were solved
+    double baSeconds() const { return ba_seconds_; }     // their total time (s)
     int keyframes() const { return graph_.numNodes(); }
     const TrackStats& lastStats() const { return last_stats_; }
     const PoseGraph& graph() const { return graph_; }
@@ -124,6 +129,8 @@ private:
     std::vector<MapPoint> map_points_;              // the local map, id = index
     int keyframe_id_ = 0;                           // the graph id of the current keyframe
     int loop_edges_ = 0;
+    int ba_runs_ = 0;
+    double ba_seconds_ = 0.0;
 
     // Per-frame records
     TrackStats last_stats_;
