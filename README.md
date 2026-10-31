@@ -50,7 +50,7 @@ ATE (RMSE, cm) on TUM RGB-D, evaluated with [evo](https://github.com/MichaelGrup
 
 Speed: ~15 ms/frame for odometry, ~24–33 ms/frame with local BA (each BA run takes 44–79 ms and runs on keyframes only).
 
-**Loop closure** cuts the error by 2.9× on fr2/desk and 3.3× on fr1/room. Bag-of-words finds the revisited places, and PnP verification rejects false candidates: on fr1/room, all 12 candidates between places 1.2–2.1 m apart were rejected.
+**Loop closure** cuts the error by 2.9× on fr2/desk and 3.1× on fr1/room. Bag-of-words finds the revisited places, and PnP verification rejects false candidates: on fr1/room, all 12 candidates between places 1.2–2.1 m apart were rejected.
 
 ![Accepted loop candidates on the true path of fr2/desk](docs/images/fr2_desk_loop_pairs.png)
 ![fr2/desk with loop closure: the loop closes](docs/images/fr2_desk_map_loop.png)
@@ -77,8 +77,8 @@ evo_ape tum data/rgbd_dataset_freiburg2_desk/groundtruth.txt output/trajectory.t
 
 ## Tech stack
 
-C++17 · CMake + presets · vcpkg · Eigen · OpenCV · yaml-cpp · GoogleTest · GitHub Actions · ASan / UBSan · evo (Python)
-*Planned:* Ceres, ONNX Runtime, Open3D, Rerun, Docker, ROS 2
+C++17 · CMake + presets · vcpkg · Eigen · OpenCV · Ceres · DBoW2 · yaml-cpp · GoogleTest · GitHub Actions · ASan / UBSan · evo (Python)
+*Planned:* ONNX Runtime, Open3D, Rerun, Docker, ROS 2
 
 ## Build
 
@@ -105,7 +105,7 @@ mkdir -p data && cd data
 tar -xzf rgbd_dataset_freiburg1_xyz.tgz
 ```
 
-The results above also use `freiburg2_desk` and `freiburg1_desk`, from the same page and unpacked the same way. Use `configs/tum_fr1.yaml` for fr1 sequences and `configs/tum_fr2.yaml` for fr2 sequences.
+The results above also use `freiburg2_desk`, `freiburg1_desk` and `freiburg1_room`, from the same page and unpacked the same way (`freiburg1_room` is also needed to train the ORB vocabulary). Use `configs/tum_fr1.yaml` for fr1 sequences and `configs/tum_fr2.yaml` for fr2 sequences.
 
 The `data/` folder is not tracked by Git.
 

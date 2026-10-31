@@ -95,6 +95,9 @@ int main(int argc, char** argv) {
     csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score,loop_inliers,loop_accepted,rejected\n";
 
     auto start = std::chrono::steady_clock::now();
+    std::cout << "Local BA: "
+              << (params.local_ba ? "on (window " + std::to_string(params.ba_window) + ")" : "off")
+              << '\n';
     for (std::size_t i = 0; i < frames.size(); ++i) {
         cv::Mat gray = cv::imread(dir + "/" + frames[i].rgb_path, cv::IMREAD_GRAYSCALE);
         cv::Mat depth = cv::imread(dir + "/" + frames[i].depth_path, cv::IMREAD_UNCHANGED);
@@ -111,8 +114,7 @@ int main(int argc, char** argv) {
             << s.loop_score     << ','
             << s.loop_inliers   << ','
             << s.loop_accepted  << ','
-            << s.rejected       << '\n'
-            << "Local BA: " << (params.local_ba ? "on (window " + std::to_string(params.ba_window) + ")" : "off") << '\n';
+            << s.rejected       << '\n';
 
         trajectory.push_back({timestamp, pose});
 

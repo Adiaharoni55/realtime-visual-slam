@@ -63,8 +63,9 @@ An experiment explains part of it: without re-measuring the chain edges from the
 
 ## Next steps
 
-| Problem | Planned fix |
-| --- | --- |
-| A wrong estimate could be accepted (no sanity check yet) | reject estimates with too few inliers or an impossible motion between frames |
-| Accumulated drift; the loop doesn't close | local bundle adjustment, pose graph and loop closure (Step 4) |
-| Moving objects (not yet tested) | segmentation masks for people (Step 5) |
+| Problem | Fix | Status |
+| --- | --- | --- |
+| A wrong estimate could be accepted | reject estimates with too few inliers or an impossible motion between frames | Done (v0.2) |
+| Accumulated drift; the loop doesn't close | local bundle adjustment, pose graph and loop closure | Done (v0.2) |
+| BA and loop closure interact (section 6) | weight edges by their uncertainty; global BA after loop closure with merged map points | Planned |
+| Moving objects (not yet tested) | segmentation masks for people (Step 5) | Planned |
