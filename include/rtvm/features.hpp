@@ -13,7 +13,9 @@ struct FrameFeatures {
 };
 
 // Detect up to max_features ORB keypoints in a grayscale image.
-FrameFeatures detectOrb(const cv::Mat& gray, int max_features = 1000);
+// mask (CV_8U): keypoints only where it's non-zero. Empty = everywhere.
+FrameFeatures detectOrb(const cv::Mat& gray, const cv::Mat& mask = cv::Mat(),
+                        int max_features = 1000);
 
 // Match features from frame a to frame b (Hamming distance + Lowe ratio test).
 // Each returned match links a.keypoints[m.queryIdx] to b.keypoints[m.trainIdx].

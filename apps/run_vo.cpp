@@ -4,14 +4,17 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include "rtvm/camera.hpp"
 #include "rtvm/tum_dataset.hpp"
 #include "rtvm/visual_odometry.hpp"
+#include "rtvm/segmentation.hpp"
 
 namespace {
 
@@ -19,7 +22,8 @@ void printUsage(const char* program) {
     std::cerr << "Usage: " << program
               << " <TUM folder> <camera yaml>"
               << " [max_translation_m] [max_rotation_deg] [min_inliers]"
-              << " [--vocab <file>] [--ba]\n";
+              << " [--vocab <file>] [--ba]"
+              << " [--mask <model.onnx>]\n";
 }
 
 }  // namespace
@@ -29,6 +33,7 @@ int main(int argc, char** argv) {
     // all others are positional, in order.
     std::vector<std::string> positional;
     std::string vocab_path;   // empty = no loop detection
+    std::string mask_path;    // empty = no masking
     bool local_ba = false;    // --ba: local bundle adjustment after each keyframe
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -38,6 +43,12 @@ int main(int argc, char** argv) {
                 return 1;
             }
             vocab_path = argv[++i];   // ++i: the path is consumed here, not as a positional
+        } else if (arg == "--mask") {
+            if (i + 1 >= argc) {   // no file after --vocab
+                printUsage(argv[0]);
+                return 1;
+            }
+            mask_path = argv[++i];
         } else if (arg == "--ba") {
             local_ba = true;          // a flag: no value follows
         } else {
@@ -52,6 +63,11 @@ int main(int argc, char** argv) {
     }
     if (!vocab_path.empty() && !std::filesystem::exists(vocab_path)) {
         std::cerr << "Vocabulary not found: " << vocab_path << '\n';
+        return 1;
+    }
+
+    if (!mask_path.empty() && !std::filesystem::exists(mask_path)) {
+        std::cerr << "Mask not found: " << mask_path << '\n';
         return 1;
     }
 
@@ -91,15 +107,34 @@ int main(int argc, char** argv) {
         std::cerr << "Could not open " << (output_dir / "stats.csv") << '\n';
         return 1;
     }
+    // The person segmenter (optional) and the kernel that enlarges its mask: the model's edges
+    // are imprecise, and keypoints right at a person's border are the most likely to be wrong.
+    std::unique_ptr<rtvm::PersonSegmenter> segmenter;
+    if (!mask_path.empty()) {
+        std::cout << "Masking people with " << mask_path << '\n';
+        segmenter = std::make_unique<rtvm::PersonSegmenter>(mask_path);
+    }
+    const cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(15, 15));
+
     csv << std::fixed << std::setprecision(6);
-    csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score,loop_inliers,loop_accepted,rejected\n";
+    csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score,loop_inliers,loop_accepted,rejected,masked\n";
 
     auto start = std::chrono::steady_clock::now();
     for (std::size_t i = 0; i < frames.size(); ++i) {
         cv::Mat gray = cv::imread(dir + "/" + frames[i].rgb_path, cv::IMREAD_GRAYSCALE);
         cv::Mat depth = cv::imread(dir + "/" + frames[i].depth_path, cv::IMREAD_UNCHANGED);
 
-        rtvm::Pose pose = vo.track(gray, depth);
+        cv::Mat static_mask;   // empty = features everywhere
+        double masked = 0.0;   // fraction of the image that is masked
+        if (segmenter) {
+            const cv::Mat color = cv::imread(dir + "/" + frames[i].rgb_path, cv::IMREAD_COLOR);
+            cv::Mat person = segmenter->segment(color);       // 255 = person
+            cv::dilate(person, person, kernel);               // cover the edges too
+            static_mask = 255 - person;                       // 255 = static background
+            masked = 1.0 - static_cast<double>(cv::countNonZero(static_mask)) / static_mask.total();
+        }
+        rtvm::Pose pose = vo.track(gray, depth, static_mask);
+
         const auto& s = vo.lastStats();
         double timestamp = frames[i].timestamp;
         csv << timestamp        << ','
@@ -111,7 +146,8 @@ int main(int argc, char** argv) {
             << s.loop_score     << ','
             << s.loop_inliers   << ','
             << s.loop_accepted  << ','
-            << s.rejected       << '\n';
+            << s.rejected       << ','
+            << masked           << '\n';
 
         trajectory.push_back({timestamp, pose});
 

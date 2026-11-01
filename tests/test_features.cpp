@@ -65,3 +65,28 @@ TEST(FeaturesTest, DescriptorRowsSplitsMatrixIntoRows) {
 TEST(FeaturesTest, DescriptorRowsOfEmptyMatrixIsEmpty) {
     EXPECT_TRUE(rtvm::descriptorRows(cv::Mat()).empty());
 }
+
+// ORB only detects where the mask is non-zero. Without the mask the left half has keypoints,
+// so the masked result isn't just an empty side of the image.
+TEST(FeaturesTest, DetectOrbRespectsMask) {
+    cv::setRNGSeed(42);
+    cv::Mat image(240, 320, CV_8UC1);
+    cv::randu(image, 0, 255);
+    cv::GaussianBlur(image, image, cv::Size(5, 5), 1.5);
+
+    cv::Mat mask(240, 320, CV_8U, cv::Scalar(0));
+    mask(cv::Rect(160, 0, 160, 240)).setTo(255);   // right half allowed, left half masked
+
+    const rtvm::FrameFeatures masked = rtvm::detectOrb(image, mask);
+    ASSERT_FALSE(masked.keypoints.empty());
+    for (const cv::KeyPoint& kp : masked.keypoints) {
+        EXPECT_GE(kp.pt.x, 160.0f);   // no keypoints in the masked left half
+    }
+
+    const rtvm::FrameFeatures unmasked = rtvm::detectOrb(image);
+    int left = 0;
+    for (const cv::KeyPoint& kp : unmasked.keypoints) {
+        if (kp.pt.x < 160.0f) ++left;
+    }
+    EXPECT_GT(left, 0);
+}

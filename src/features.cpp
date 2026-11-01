@@ -4,10 +4,10 @@
 
 namespace rtvm {
 
-FrameFeatures detectOrb(const cv::Mat& gray, int max_features) {
+FrameFeatures detectOrb(const cv::Mat& gray, const cv::Mat& mask, int max_features) {
     FrameFeatures features;
     cv::Ptr<cv::ORB> orb = cv::ORB::create(max_features);
-    orb->detectAndCompute(gray, cv::noArray(), features.keypoints, features.descriptors);
+    orb->detectAndCompute(gray, mask, features.keypoints, features.descriptors);
     return features;
 }
 
@@ -40,6 +40,5 @@ std::vector<cv::Mat> descriptorRows(const cv::Mat& descriptors) {
     }
     return rows;
 }
-
 
 }  // namespace rtvm

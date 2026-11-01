@@ -113,8 +113,8 @@ void VisualOdometry::setKeyframe(FrameFeatures&& features, const cv::Mat& depth,
     if (params_.local_ba) localBundleAdjust();
 }
 
-Pose VisualOdometry::track(const cv::Mat& gray, const cv::Mat& depth) {
-    FrameFeatures current = detectOrb(gray);
+Pose VisualOdometry::track(const cv::Mat& gray, const cv::Mat& depth, const cv::Mat& static_mask) {
+    FrameFeatures current = detectOrb(gray, static_mask);
     last_stats_ = TrackStats{};
 
     if (!has_keyframe_) {

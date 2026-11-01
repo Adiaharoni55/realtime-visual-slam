@@ -60,8 +60,10 @@ public:
     explicit VisualOdometry(PinholeCamera camera, VoParams params = {});
 
     // Process the next frame (grayscale image + 16-bit TUM depth image).
+    // static_mask (CV_8U): features only where it's non-zero (255 = static background,
+    // 0 = e.g. a person). Empty = everywhere.
     // Returns the camera pose of this frame, relative to the first frame.
-    Pose track(const cv::Mat& gray, const cv::Mat& depth);
+    Pose track(const cv::Mat& gray, const cv::Mat& depth, const cv::Mat& static_mask = cv::Mat());
 
     // Turns on loop-closure candidate search and loads the vocabulary.
     // Throws if the file doesn't exist.
