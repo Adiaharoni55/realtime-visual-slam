@@ -1,0 +1,5 @@
+# TUM RGB-D, Freiburg 3 camera (RGB). Images are already undistorted.
+fx: 535.4
+fy: 539.2
+cx: 320.1
+cy: 247.6
