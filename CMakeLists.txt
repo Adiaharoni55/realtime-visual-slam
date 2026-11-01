@@ -9,6 +9,37 @@ find_package(Eigen3 CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
 find_package(Ceres CONFIG REQUIRED)
+
+# ---- ONNX Runtime (official prebuilt binaries, downloaded at configure time) ----
+set(ORT_VERSION "1.31.1")   # from https://github.com/microsoft/onnxruntime/releases
+set(ORT_BASE "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}")
+if(APPLE)
+    set(ORT_URL "${ORT_BASE}/onnxruntime-osx-arm64-${ORT_VERSION}.tgz")
+elseif(WIN32)
+    set(ORT_URL "${ORT_BASE}/onnxruntime-win-x64-${ORT_VERSION}.zip")
+else()
+    set(ORT_URL "${ORT_BASE}/onnxruntime-linux-x64-${ORT_VERSION}.tgz")
+endif()
+
+include(FetchContent)
+FetchContent_Declare(onnxruntime URL "${ORT_URL}" DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(onnxruntime)   # unpacks to ${onnxruntime_SOURCE_DIR}
+
+add_library(onnxruntime::onnxruntime SHARED IMPORTED)
+set_target_properties(onnxruntime::onnxruntime PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${onnxruntime_SOURCE_DIR}/include")
+if(APPLE)
+    set_target_properties(onnxruntime::onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.dylib")
+elseif(WIN32)
+    set_target_properties(onnxruntime::onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${onnxruntime_SOURCE_DIR}/lib/onnxruntime.dll"
+        IMPORTED_IMPLIB   "${onnxruntime_SOURCE_DIR}/lib/onnxruntime.lib")
+else()
+    set_target_properties(onnxruntime::onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.so")
+endif()
+
 # DBoW2's own CMake config is outdated (no target, release library only), so define
 # a proper imported target: headers + the release and debug builds of the library.
 set(RTVM_VCPKG_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
@@ -61,6 +92,7 @@ add_library(rtvm_core
     src/loop_detector.cpp
     src/vocabulary.cpp
     src/bundle_adjustment.cpp
+    src/segmentation.cpp
 )
 
 # find the version
@@ -76,7 +108,7 @@ target_include_directories(rtvm_core PUBLIC
 # PRIVATE: used only inside our .cpp files.
 target_link_libraries(rtvm_core
     PUBLIC  Eigen3::Eigen ${OpenCV_LIBS} Ceres::ceres DBoW2::DBoW2
-    PRIVATE yaml-cpp::yaml-cpp
+    PRIVATE yaml-cpp::yaml-cpp onnxruntime::onnxruntime
 )
 
 # ---- App: the rtvm command-line program ----
@@ -100,8 +132,22 @@ target_link_libraries(rtvm_train_vocab PRIVATE rtvm_core rtvm_warnings rtvm_sani
 add_executable(rtvm_convert_vocab apps/convert_vocab.cpp)
 target_link_libraries(rtvm_convert_vocab PRIVATE rtvm_core rtvm_warnings rtvm_sanitizers)
 
+# ---- Tool: measure the segmentation model's speed (writes output/person_mask_cpp.png) ----
+add_executable(rtvm_segment_demo apps/segment_demo.cpp)
+target_link_libraries(rtvm_segment_demo PRIVATE rtvm_core rtvm_warnings rtvm_sanitizers)
+
 # The app uses the library (and inherits its PUBLIC include folder)
 target_link_libraries(rtvm PRIVATE rtvm_core)
+
+# Windows finds DLLs next to the program, so copy them there after each build.
+if(WIN32)
+    foreach(app rtvm rtvm_match_demo rtvm_run_vo rtvm_train_vocab rtvm_convert_vocab rtvm_segment_demo)
+        add_custom_command(TARGET ${app} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_RUNTIME_DLLS:${app}> $<TARGET_FILE_DIR:${app}>
+            COMMAND_EXPAND_LISTS)
+    endforeach()
+endif()
 
 # ---- Compiler warnings ----
 # A small "interface" target that holds only settings, no code.

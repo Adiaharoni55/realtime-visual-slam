@@ -13,6 +13,7 @@ add_executable(rtvm_tests
     test_loop_detector.cpp
     test_vocabulary.cpp
     test_bundle_adjustment.cpp
+    test_segmentation.cpp
 )
 
 # Tests use our library + GoogleTest (gtest_main provides main())
@@ -28,6 +29,14 @@ target_compile_definitions(rtvm_tests PRIVATE
     RTVM_CONFIG_DIR="${PROJECT_SOURCE_DIR}/configs"
     RTVM_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
 )
+
+# Windows finds DLLs next to the program; this must run before the tests are discovered.
+if(WIN32)
+    add_custom_command(TARGET rtvm_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:rtvm_tests> $<TARGET_FILE_DIR:rtvm_tests>
+        COMMAND_EXPAND_LISTS)
+endif()
 
 # Register each TEST() with CTest, CMake's test runner
 include(GoogleTest)
