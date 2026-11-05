@@ -15,6 +15,21 @@
 
 namespace rtvm {
 
+bool loopConsistentWithOdometry(const Pose& predicted, const Pose& measured,
+                                double path_length_m, const VoParams& params) {
+    // A real loop differs from odometry only by the drift since the old keyframe; a look-alike
+    // place can be meters and tens of degrees off.
+    const Pose disagreement = predicted.inverse() * measured;   // identity if they agree
+    const double t_error = disagreement.translation().norm();
+    const double r_error_deg = Eigen::AngleAxisd(disagreement.rotation()).angle() * 180.0 / M_PI;
+    // Drift grows with the distance travelled, so the tolerances do too.
+    const double t_tolerance =
+        params.loop_max_disagreement + params.loop_disagreement_per_meter * path_length_m;
+    const double r_tolerance_deg =
+        params.loop_max_rotation_deg + params.loop_rotation_deg_per_meter * path_length_m;
+    return t_error < t_tolerance && r_error_deg < r_tolerance_deg;
+}
+
 VisualOdometry::VisualOdometry(PinholeCamera camera, VoParams params)
     : camera_(std::move(camera)), params_(params) {}
 
@@ -61,20 +76,10 @@ void VisualOdometry::setKeyframe(FrameFeatures&& features, const cv::Mat& depth,
             // Verify geometrically: PnP from the old keyframe to this one. Only then trust it as a loop edge.
             if (est.success && last_stats_.loop_inliers >= params_.min_loop_inliers) {
                 // Then check it against odometry: where does the chain of edges put this keyframe,
-                // seen from c? A real loop differs only by the drift since c; a look-alike place
-                // can be meters and tens of degrees off.
+                // seen from c?
                 const Pose predicted = relativePose(graph_.pose(c), pose_);
-                const Pose disagreement = predicted.inverse() * est.motion;   // identity if they agree
-                const double t_error = disagreement.translation().norm();
-                const double r_error_deg =
-                    Eigen::AngleAxisd(disagreement.rotation()).angle() * 180.0 / M_PI;
-                // Drift grows with the distance travelled, so the tolerances do too.
-                const double travelled = path - keyframes_[c].path_length;
-                const double t_tolerance = params_.loop_max_disagreement +
-                                           params_.loop_disagreement_per_meter * travelled;
-                const double r_tolerance_deg = params_.loop_max_rotation_deg +
-                                               params_.loop_rotation_deg_per_meter * travelled;
-                if (t_error < t_tolerance && r_error_deg < r_tolerance_deg) {
+                if (loopConsistentWithOdometry(predicted, est.motion,
+                                               path - keyframes_[c].path_length, params_)) {
                     graph_.addEdge(c, id, est.motion, /*loop=*/true);
                     loops_.push_back(LoopRecord{c, id, last_stats_.loop_inliers, est.motion});
                     ++loop_edges_;

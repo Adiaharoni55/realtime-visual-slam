@@ -35,6 +35,11 @@ struct VoParams {
     double ba_depth_noise = 0.01;                   // depth sigma = this * z^2 (see BundleAdjuster)
 };
 
+// True if a loop's measured relative pose agrees with odometry's prediction within a tolerance
+// that grows with the path length between the two keyframes (the loop_* fields of params).
+bool loopConsistentWithOdometry(const Pose& predicted, const Pose& measured,
+                                double path_length_m, const VoParams& params);
+
 // What happened inside track() for the last frame.
 struct TrackStats {
     int matches = 0;

@@ -32,6 +32,7 @@ CONFIGS = [
     ("sitting loops", SITTING, VOCAB),
     ("sitting loops + mask", SITTING, VOCAB + MASK),
     ("structure odometry", STRUCTURE, []),
+    ("structure odometry + mask", STRUCTURE, MASK),
     ("structure BA", STRUCTURE, ["--ba"]),
     ("structure loops", STRUCTURE, VOCAB),
     ("structure BA + loops", STRUCTURE, ["--ba"] + VOCAB),

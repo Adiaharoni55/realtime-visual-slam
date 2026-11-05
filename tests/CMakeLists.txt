@@ -14,6 +14,7 @@ add_executable(rtvm_tests
     test_vocabulary.cpp
     test_bundle_adjustment.cpp
     test_segmentation.cpp
+    test_visual_odometry.cpp
 )
 
 # Tests use our library + GoogleTest (gtest_main provides main())
