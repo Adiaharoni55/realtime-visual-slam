@@ -23,18 +23,19 @@ void printUsage(const char* program) {
               << " <TUM folder> <camera yaml>"
               << " [max_translation_m] [max_rotation_deg] [min_inliers]"
               << " [--vocab <file>] [--ba]"
-              << " [--mask <model.onnx>]\n";
+              << " [--mask <model.onnx>] [--start <frame>]\n";
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-    // Split the arguments: "--vocab <file>" and "--ba" are named (anywhere),
-    // all others are positional, in order.
+    // Split the arguments: "--vocab <file>", "--mask <file>", "--start <frame>" and "--ba" are
+    // named (anywhere), all others are positional, in order.
     std::vector<std::string> positional;
     std::string vocab_path;   // empty = no loop detection
     std::string mask_path;    // empty = no masking
     bool local_ba = false;    // --ba: local bundle adjustment after each keyframe
+    int start_frame = 0;      // --start: skip the frames before this one (for repeated runs)
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--vocab") {
@@ -44,11 +45,17 @@ int main(int argc, char** argv) {
             }
             vocab_path = argv[++i];   // ++i: the path is consumed here, not as a positional
         } else if (arg == "--mask") {
-            if (i + 1 >= argc) {   // no file after --vocab
+            if (i + 1 >= argc) {   // no file after --mask
                 printUsage(argv[0]);
                 return 1;
             }
             mask_path = argv[++i];
+        } else if (arg == "--start") {
+            if (i + 1 >= argc) {   // no frame after --start
+                printUsage(argv[0]);
+                return 1;
+            }
+            start_frame = std::stoi(argv[++i]);
         } else if (arg == "--ba") {
             local_ba = true;          // a flag: no value follows
         } else {
@@ -93,6 +100,15 @@ int main(int argc, char** argv) {
     auto frames = rtvm::associateTum(rtvm::readTumFileList(dir + "/rgb.txt"),
                                      rtvm::readTumFileList(dir + "/depth.txt"),
                                      rtvm::readTumGroundTruth(dir + "/groundtruth.txt"));
+    // A later start gives different keyframes on almost the same data: repeated runs with
+    // start 0..4 show how much the results vary by chance.
+    if (start_frame < 0 || start_frame >= static_cast<int>(frames.size())) {
+        std::cerr << "Start frame " << start_frame << " is outside the sequence (" << frames.size()
+                  << " frames)\n";
+        return 1;
+    }
+    frames.erase(frames.begin(), frames.begin() + start_frame);
+    std::cout << "Start frame: " << start_frame << '\n';
     std::cout << "Frames: " << frames.size() << '\n';
 
     rtvm::VisualOdometry vo(camera, params);
@@ -117,7 +133,7 @@ int main(int argc, char** argv) {
     const cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(15, 15));
 
     csv << std::fixed << std::setprecision(6);
-    csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score,loop_inliers,loop_accepted,rejected,masked\n";
+    csv << "timestamp,matches,inliers,success,new_keyframe,loop_candidate,loop_score,loop_inliers,loop_accepted,rejected,masked,loop_inconsistent\n";
 
     auto start = std::chrono::steady_clock::now();
     for (std::size_t i = 0; i < frames.size(); ++i) {
@@ -147,7 +163,8 @@ int main(int argc, char** argv) {
             << s.loop_inliers   << ','
             << s.loop_accepted  << ','
             << s.rejected       << ','
-            << masked           << '\n';
+            << masked           << ','
+            << s.loop_inconsistent << '\n';
 
         trajectory.push_back({timestamp, pose});
 
@@ -190,6 +207,19 @@ int main(int argc, char** argv) {
         optimized_trajectory.push_back({trajectory[i].timestamp, optimized[i]});
     }
     rtvm::writeTumTrajectory((output_dir / "trajectory.txt").string(), optimized_trajectory);
+
+    // Every accepted loop edge, to compare with the ground truth (scripts/check_loops.py).
+    std::ofstream loops_csv(output_dir / "loops.csv");
+    loops_csv << std::fixed << std::setprecision(6);
+    loops_csv << "from,to,inliers,tx,ty,tz,qx,qy,qz,qw\n";
+    for (const rtvm::LoopRecord& loop : vo.loops()) {
+        const Eigen::Vector3d t = loop.measured.translation();
+        const Eigen::Quaterniond q(loop.measured.rotation());
+        loops_csv << loop.from << ',' << loop.to << ',' << loop.inliers << ','
+                  << t.x() << ',' << t.y() << ',' << t.z() << ','
+                  << q.x() << ',' << q.y() << ',' << q.z() << ',' << q.w() << '\n';
+    }
+
     const rtvm::MapStats map = vo.mapStats();
 
     std::cout << "Graph: " << vo.graph().numNodes() << " nodes, " << vo.graph().numEdges() << " edges ("

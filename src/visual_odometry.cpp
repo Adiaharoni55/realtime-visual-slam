@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -41,6 +42,10 @@ void VisualOdometry::setKeyframe(FrameFeatures&& features, const cv::Mat& depth,
     if (has_keyframe_) {
         graph_.addEdge(keyframe_id_, id, relativePose(keyframe_pose_, pose_));
     }
+    // Distance travelled up to this keyframe (the loop check below needs it).
+    const double path = has_keyframe_
+        ? keyframes_.back().path_length + (pose_.translation() - keyframe_pose_.translation()).norm()
+        : 0.0;
 
     // Ask for an older look-alike before adding this keyframe, so it can't find itself.
     if (loop_detector_) {
@@ -55,9 +60,28 @@ void VisualOdometry::setKeyframe(FrameFeatures&& features, const cv::Mat& depth,
             last_stats_.loop_inliers = static_cast<int>(est.inliers.size());
             // Verify geometrically: PnP from the old keyframe to this one. Only then trust it as a loop edge.
             if (est.success && last_stats_.loop_inliers >= params_.min_loop_inliers) {
-                graph_.addEdge(c, id, est.motion, /*loop=*/true);
-                ++loop_edges_;
-                last_stats_.loop_accepted = true;
+                // Then check it against odometry: where does the chain of edges put this keyframe,
+                // seen from c? A real loop differs only by the drift since c; a look-alike place
+                // can be meters and tens of degrees off.
+                const Pose predicted = relativePose(graph_.pose(c), pose_);
+                const Pose disagreement = predicted.inverse() * est.motion;   // identity if they agree
+                const double t_error = disagreement.translation().norm();
+                const double r_error_deg =
+                    Eigen::AngleAxisd(disagreement.rotation()).angle() * 180.0 / M_PI;
+                // Drift grows with the distance travelled, so the tolerances do too.
+                const double travelled = path - keyframes_[c].path_length;
+                const double t_tolerance = params_.loop_max_disagreement +
+                                           params_.loop_disagreement_per_meter * travelled;
+                const double r_tolerance_deg = params_.loop_max_rotation_deg +
+                                               params_.loop_rotation_deg_per_meter * travelled;
+                if (t_error < t_tolerance && r_error_deg < r_tolerance_deg) {
+                    graph_.addEdge(c, id, est.motion, /*loop=*/true);
+                    loops_.push_back(LoopRecord{c, id, last_stats_.loop_inliers, est.motion});
+                    ++loop_edges_;
+                    last_stats_.loop_accepted = true;
+                } else {
+                    last_stats_.loop_inconsistent = true;
+                }
             }
         }
         loop_detector_->add(features.descriptors);
@@ -74,6 +98,7 @@ void VisualOdometry::setKeyframe(FrameFeatures&& features, const cv::Mat& depth,
     cv::KeyPoint::convert(kf.features.keypoints, points);     // keypoints → plain (x, y) pixels
     kf.undistorted = undistortPixels(points, camera_);        // undistorted pixel per keypoint
     kf.map_point.assign(kf.features.keypoints.size(), -1);    // no map point yet for any keypoint
+    kf.path_length = path;
     keyframes_.push_back(std::move(kf));
     keyframe_pose_ = pose_;
     has_keyframe_ = true;

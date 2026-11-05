@@ -19,6 +19,13 @@ struct VoParams {
     double max_rotation_deg = 5.0;                  // degrees rotated since the keyframe
     int min_inliers = 100;                          // fewer PnP inliers than this -> new keyframe
     int min_loop_inliers = 50;                      // PnP inliers needed to accept a loop candidate
+    // Odometry consistency of a loop: PnP's loop motion may differ from the odometry's by at most
+    // loop_max_disagreement + loop_disagreement_per_meter * (path between the two keyframes),
+    // and likewise in rotation. Rejects look-alike places (perceptual aliasing).
+    double loop_max_disagreement = 0.2;             // meters
+    double loop_disagreement_per_meter = 0.1;       // allowed drift per meter travelled
+    double loop_max_rotation_deg = 10.0;            // degrees
+    double loop_rotation_deg_per_meter = 3.0;       // allowed rotation drift per meter travelled
     int min_track_inliers = 20;                     // fewer PnP inliers than this: don't trust the estimate
     double max_frame_translation = 0.15;            // meters the camera may move between two frames
     bool local_ba = false;                          // local bundle adjustment after each new keyframe
@@ -41,6 +48,7 @@ struct TrackStats {
     double loop_score = 0.0;                        // its BoW similarity score
     int loop_inliers = 0;                           // PnP inliers when verifying the candidate
     bool loop_accepted = false;                     // true if the loop edge was added
+    bool loop_inconsistent = false;                 // PnP verified it, but it disagrees with odometry
 };
 
 // Size and connectivity of the local map. A point seen by one keyframe only gives
@@ -49,6 +57,14 @@ struct MapStats {
     int points = 0;
     int observations = 0;      // summed over all points
     int points_3plus = 0;      // points seen by at least 3 keyframes
+};
+
+// An accepted loop-closure edge, as measured by PnP.
+struct LoopRecord {
+    int from;         // the older keyframe
+    int to;           // the new keyframe
+    int inliers;
+    Pose measured;    // keyframe `to` seen from keyframe `from`
 };
 
 // Frame-to-keyframe visual odometry: estimates the camera pose of each new frame
@@ -91,7 +107,7 @@ public:
     const TrackStats& lastStats() const { return last_stats_; }
     const PoseGraph& graph() const { return graph_; }
     MapStats mapStats() const;
-
+    const std::vector<LoopRecord>& loops() const { return loops_; }
 
 private:
     // Where a frame was tracked from: its keyframe, and its pose relative to that keyframe.
@@ -106,6 +122,7 @@ private:
         cv::Mat depth;
         std::vector<Eigen::Vector2d> undistorted;   // undistorted keypoint pixels (for BA)
         std::vector<int> map_point;                 // per keypoint: its map point id, or -1
+        double path_length = 0.0;                   // meters travelled from keyframe 0 to here
     };
 
     // A 3D point and the keyframes that saw it.
@@ -131,6 +148,7 @@ private:
     std::vector<MapPoint> map_points_;              // the local map, id = index
     int keyframe_id_ = 0;                           // the graph id of the current keyframe
     int loop_edges_ = 0;
+    std::vector<LoopRecord> loops_;   // every accepted loop edge
     int ba_runs_ = 0;
     double ba_seconds_ = 0.0;
 
