@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <cmath>
-
 #include "rtvm/pose.hpp"
 #include "rtvm/visual_odometry.hpp"
 
@@ -10,7 +8,7 @@ namespace {
 // A pose rotated by angle_deg around axis, then shifted by t.
 rtvm::Pose makePose(const Eigen::Vector3d& t, const Eigen::Vector3d& axis, double angle_deg) {
     rtvm::Pose pose = rtvm::Pose::Identity();
-    pose.linear() = Eigen::AngleAxisd(angle_deg * M_PI / 180.0, axis.normalized()).toRotationMatrix();
+    pose.linear() = Eigen::AngleAxisd(angle_deg * EIGEN_PI / 180.0, axis.normalized()).toRotationMatrix();
     pose.translation() = t;
     return pose;
 }

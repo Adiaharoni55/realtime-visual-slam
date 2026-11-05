@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -21,7 +20,7 @@ bool loopConsistentWithOdometry(const Pose& predicted, const Pose& measured,
     // place can be meters and tens of degrees off.
     const Pose disagreement = predicted.inverse() * measured;   // identity if they agree
     const double t_error = disagreement.translation().norm();
-    const double r_error_deg = Eigen::AngleAxisd(disagreement.rotation()).angle() * 180.0 / M_PI;
+    const double r_error_deg = Eigen::AngleAxisd(disagreement.rotation()).angle() * 180.0 / EIGEN_PI;
     // Drift grows with the distance travelled, so the tolerances do too.
     const double t_tolerance =
         params.loop_max_disagreement + params.loop_disagreement_per_meter * path_length_m;
